@@ -1,0 +1,14 @@
+# ─────────────────────────────────────
+#  Configuration des Salaires par Grade
+# ─────────────────────────────────────
+# Format:
+# grade_name: amount
+#
+# Le plugin vérifiera la permission aevumcore.salary.rank.<grade_name>
+# Si un joueur a plusieurs grades, le salaire le plus élevé sera appliqué.
+
+salaries:
+  default: 100
+  vip: 250
+  staff: 500
+  admin: 0

@@ -1,0 +1,76 @@
+name: AevumCore
+version: '1.0'
+main: me.ar1hurgit.aevumcore.AevumCore
+api-version: '1.21'
+authors: [ ar1hurgit ]
+softdepend: [Vault]
+
+commands:
+  des:
+    description: Lance un dé
+    permission: aevumcore.player.dice
+
+  maintenance:
+    description: Active ou désactive la maintenance du serveur
+    permission: aevumcore.admin.maintenance
+    aliases: []
+
+  lastconnexion:
+    description: Affiche la dernière connexion d'un joueur
+    permission: aevumcore.player.lastconnexion
+    aliases:
+      - lastco
+      - last
+
+  salary:
+    description: Affiche les informations sur le salaire
+    permission: aevumcore.player.salary
+
+  playtime:
+    description: Affiche votre temps de jeu total
+    permission: aevumcore.player.playtime
+
+permissions:
+
+  # ── Player ──────────────────────────
+  aevumcore.player.dice:
+    description: Permet d'utiliser le dé
+    default: true
+
+  aevumcore.player.lastconnexion:
+    description: Permet de consulter sa propre dernière connexion
+    default: true
+
+  aevumcore.player.*:
+    description: Toutes les permissions joueur
+    default: true
+    children:
+      aevumcore.player.dice: true
+      aevumcore.player.lastconnexion: true
+      aevumcore.player.salary: true
+      aevumcore.player.playtime: true
+
+  # ── Admin ────────────────────────────
+  aevumcore.admin.maintenance:
+    description: Permet d'activer / désactiver la maintenance
+    default: op
+
+  aevumcore.admin.lastconnexion:
+    description: Permet de consulter la connexion de n'importe quel joueur
+    default: op
+
+  aevumcore.admin.salary:
+    description: Permet de gérer les salaires et grades
+    default: op
+
+  aevumcore.maintenance.bypass:
+    description: Permet de se connecter pendant la maintenance
+    default: op
+
+  aevumcore.admin.*:
+    description: Toutes les permissions admin
+    default: op
+    children:
+      aevumcore.admin.maintenance: true
+      aevumcore.admin.lastconnexion: true
+      aevumcore.maintenance.bypass: true

@@ -1,0 +1,33 @@
+# Gradle
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ IDEA
+.idea/*.xml
+.idea/*.iml
+.idea/libraries
+.idea/modules.xml
+.idea/workspace.xml
+*.iws
+*.iml
+*.ipr
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Plugin specific
+run/
+logs/
+plugins/
+*.log
+*.db
+!src/main/resources/*.db

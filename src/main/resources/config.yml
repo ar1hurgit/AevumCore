@@ -1,0 +1,87 @@
+prefix: "[AevumCore]"
+
+# ─────────────────────────────────────
+#  Base de données
+# ─────────────────────────────────────
+database:
+  type: "SQLITE"   # SQLITE ou MYSQL
+  sqlite:
+    file: "data.db"
+  mysql:
+    host: "localhost"
+    port: 3306
+    database: "aevumcore"
+    username: "root"
+    password: ""
+    pool-size: 5
+
+# ─────────────────────────────────────
+#  Dé (/ des)
+# ─────────────────────────────────────
+dice:
+  enabled: true
+  radius: 15
+  cooldown: 5
+  message-self: "&a🎲 Résultat : {result}/100"
+  message-others: "&e🎲 {player} a lancer des dés et a obtenu : {result}/100"
+
+# ─────────────────────────────────────
+#  Premier Join
+# ─────────────────────────────────────
+firstjoin:
+  enabled: true
+
+  reward-type: ITEM # ITEM ou VAULT
+  # Montant d'argent donné au premier join
+  starting-money: 100
+  # Type d'item utilisé comme argent si c'est de l'argent non physique
+  starting-money-item: "EMERALD"
+
+  global-message: true
+  # %player% sera remplacé par le pseudo du joueur. Supporte les codes couleur &
+  welcome-message: "&6✦ Bienvenue &e%player% &6sur le serveur !"
+
+
+
+# ─────────────────────────────────────
+#  Maintenance (/maintenance)
+# ─────────────────────────────────────
+maintenance:
+  enabled: true
+  # État persistant de la maintenance (modifié automatiquement par /maintenance)
+  active-state: false
+  # Message affiché au joueur refusé. Supporte les codes couleur &
+  message: "&c⚙ Le serveur est actuellement en maintenance.\n&7Revenez plus tard !"
+  # Groupes autorisés à se connecter pendant la maintenance (vérifié via permission group.<nom>)
+  allowed-groups:
+    - "admin"
+    - "staff"
+    - "moderateur"
+
+# ─────────────────────────────────────
+#  Dernière Connexion (/lastconnexion)
+# ─────────────────────────────────────
+lastconnection:
+  enabled: true
+  # Afficher le temps de jeu total dans la fiche du joueur
+  show-playtime: true
+  # Nombre de sessions affichées dans l'historique
+  history-size: 10
+  # Format de date Java (SimpleDateFormat)
+  date-format: "dd/MM/yyyy HH:mm"
+  # Durée du cache en secondes pour éviter trop de requêtes BDD
+  cache-duration: 60
+
+# ─────────────────────────────────────
+#  Salaire (/salary)
+# ─────────────────────────────────────
+salary:
+  enabled: true
+  # Fréquence de versement en minutes
+  interval: 60
+  # Si activé : accumulation des salaires hors-ligne
+  pay-offline: true
+  # Type de récompense : ITEM ou VAULT
+  reward-type: ITEM
+  # Item utilisé si reward-type=ITEM
+  starting-money-item: "EMERALD"
