@@ -1,8 +1,8 @@
 prefix: "[AevumCore]"
 
-# ─────────────────────────────────────
-#  Base de données
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+#  Base de donnÃ©es
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 database:
   type: "SQLITE"   # SQLITE ou MYSQL
   sqlite:
@@ -15,73 +15,184 @@ database:
     password: ""
     pool-size: 5
 
-# ─────────────────────────────────────
-#  Dé (/ des)
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+#  DÃ© (/ des)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 dice:
   enabled: true
   radius: 15
   cooldown: 5
-  message-self: "&a🎲 Résultat : {result}/100"
-  message-others: "&e🎲 {player} a lancer des dés et a obtenu : {result}/100"
+  message-self: "&aðŸŽ² RÃ©sultat : {result}/100"
+  message-others: "&eðŸŽ² {player} a lancer des dÃ©s et a obtenu : {result}/100"
 
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  Premier Join
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 firstjoin:
   enabled: true
 
   reward-type: ITEM # ITEM ou VAULT
-  # Montant d'argent donné au premier join
+  # Montant d'argent donnÃ© au premier join
   starting-money: 100
-  # Type d'item utilisé comme argent si c'est de l'argent non physique
+  # Type d'item utilisÃ© comme argent si c'est de l'argent non physique
   starting-money-item: "EMERALD"
 
   global-message: true
-  # %player% sera remplacé par le pseudo du joueur. Supporte les codes couleur &
-  welcome-message: "&6✦ Bienvenue &e%player% &6sur le serveur !"
+  # %player% sera remplacÃ© par le pseudo du joueur. Supporte les codes couleur &
+  welcome-message: "&6âœ¦ Bienvenue &e%player% &6sur le serveur !"
 
 
 
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  Maintenance (/maintenance)
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 maintenance:
   enabled: true
-  # État persistant de la maintenance (modifié automatiquement par /maintenance)
+  # Ã‰tat persistant de la maintenance (modifiÃ© automatiquement par /maintenance)
   active-state: false
-  # Message affiché au joueur refusé. Supporte les codes couleur &
-  message: "&c⚙ Le serveur est actuellement en maintenance.\n&7Revenez plus tard !"
-  # Groupes autorisés à se connecter pendant la maintenance (vérifié via permission group.<nom>)
+  # Message affichÃ© au joueur refusÃ©. Supporte les codes couleur &
+  message: "&câš™ Le serveur est actuellement en maintenance.\n&7Revenez plus tard !"
+  # Groupes autorisÃ©s Ã  se connecter pendant la maintenance (vÃ©rifiÃ© via permission group.<nom>)
   allowed-groups:
     - "admin"
     - "staff"
     - "moderateur"
 
-# ─────────────────────────────────────
-#  Dernière Connexion (/lastconnexion)
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+#  DerniÃ¨re Connexion (/lastconnexion)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 lastconnection:
   enabled: true
   # Afficher le temps de jeu total dans la fiche du joueur
   show-playtime: true
-  # Nombre de sessions affichées dans l'historique
+  # Nombre de sessions affichÃ©es dans l'historique
   history-size: 10
   # Format de date Java (SimpleDateFormat)
   date-format: "dd/MM/yyyy HH:mm"
-  # Durée du cache en secondes pour éviter trop de requêtes BDD
+  # DurÃ©e du cache en secondes pour Ã©viter trop de requÃªtes BDD
   cache-duration: 60
 
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  Salaire (/salary)
-# ─────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 salary:
   enabled: true
-  # Fréquence de versement en minutes
+  # FrÃ©quence de versement en minutes
   interval: 60
-  # Si activé : accumulation des salaires hors-ligne
-  pay-offline: true
-  # Type de récompense : ITEM ou VAULT
+  # Si activÃ© : accumulation des salaires hors-ligne
+  pay-offline: false
+  # Type de rÃ©compense : ITEM ou VAULT
   reward-type: ITEM
-  # Item utilisé si reward-type=ITEM
+  # Item utilise si reward-type=ITEM (accepte aussi namespace:item, ex: aevumguild:bronze_coin)
   starting-money-item: "EMERALD"
+# Anti-AFK
+antiafk:
+  enabled: true
+  timeout-seconds: 300
+  action: "message" # "message" ou "kick"
+  afk-message: "&eVous etes AFK (inactivite detectee)."
+  return-message: "&aVous n'etes plus AFK."
+
+
+# Vanish
+vanish:
+  enabled: true
+  hide-join-message: true
+  notify-staff: true
+
+# Protection des explosions
+explosion:
+  enabled: true
+  cancel-block-damage: true
+  cancel-player-damage: false
+  # Laisser vide pour appliquer la protection sur tous les mondes
+  allowed-worlds: [ ]
+
+# God Mode
+godmode:
+  enabled: true
+  # Duree en secondes avant desactivation auto. 0 = jamais.
+  auto-disable-delay: 0
+  # Notifie le staff quand un joueur active/desactive son god mode.
+  notify-others: true
+
+# Vision
+vision:
+  enabled: true
+  # Type d'effet applique (ex: NIGHT_VISION).
+  effect-type: "NIGHT_VISION"
+  # Intensite de l'effet (0 = niveau 1, 1 = niveau 2, ...).
+  effect-amplifier: 1
+
+# Pseudonyme
+nickname:
+  enabled: true
+  # Longueur maximale du pseudo affiche
+  max-length: 16
+  # Classe de caracteres autorises (regex char class)
+  allowed-chars: "A-Za-z0-9_"
+  # Cooldown en secondes entre 2 changements
+  cooldown: 60
+
+# Reports
+report:
+  enabled: true
+  # Delai en secondes entre deux reports d'un meme joueur. 0 = aucun cooldown.
+  cooldown: 60
+  # Si active : joue un son aux membres du staff a chaque nouveau report.
+  notify-sound: true
+  # Placeholders: {id}, {reporter}, {target}, {reason}
+  format-notification: "&c[Nouveau report] &e#{id} &7| &b{reporter} &7-> &6{target} &7: &f{reason}"
+  # Placeholders: {id}, {reporter}, {target}, {reason}
+  format-confirmation: "&aVotre report &e#{id} &acontre &6{target} &aa bien ete envoye."
+
+# Systeme de chat
+chat:
+  enabled: true
+
+  # Chat public
+  format-hrp: "&7[HRP] {prefix}{player}&8: &f{message}"
+  format-rp: "&d* {player} {action} *"
+  format-msg-prive: "&d[MP] {sender} &8-> &d{target}&8: &f{message}"
+  format-msg-prive-send: "&d[MP] &fvers &d{target}&8: &f{message}"
+  format-msg-prive-receive: "&d[MP] &fde &d{sender}&8: &f{message}"
+  format-spy: "&8[SPY] &7{sender} &8-> &7{target}&8: &f{message}"
+  format-staffchat: "&c[STAFF] &f{player}&8: &7{message}"
+
+  # Annonces
+  format-annonce-rp:
+    - "&6&l[Annonce RP] &f{message}"
+    - "&7Par: &e{sender}"
+  format-annonce-hrp: "&7[Annonce HRP] &f{message}"
+  format-annonce-royaume-decret:
+    - "&6&l[Decret Royal]"
+    - "&eEmetteur: &f{sender}"
+    - "&eDate: &f{date}"
+    - "&f{message}"
+  format-annonce-royaume-notif: "&e[Notification Royale] &f{message}"
+
+  annonce-rp-son: "BLOCK_BELL_USE"
+  annonce-rp-titre: "&6Annonce RP"
+  annonce-rp-sous-titre: "&f{message}"
+  annonce-rp-title-fade-in: 10
+  annonce-rp-title-stay: 70
+  annonce-rp-title-fade-out: 20
+  annonce-notif-cooldown: 300
+  annonce-date-format: "dd/MM/yyyy HH:mm"
+
+  # Connexion / deconnexion
+  message-connexion: "&a[+] &f{player} &aa rejoint le serveur."
+  message-deconnexion: "&c[-] &f{player} &ca quitte le serveur."
+
+  # Outils
+  log-chat: false
+  mentions: true
+  mentions-format: "&e@{name}&r"
+  message-spy-enabled: "&aSpy active: vous espionnez maintenant les messages prives."
+  message-spy-disabled: "&cSpy desactive."
+  message-hrp-mask-enabled: "&eMode HRP mask active. Faites /hrp unmask pour reparler."
+  message-hrp-mask-disabled: "&aMode HRP mask desactive."
+  message-hrp-mask-blocked: "&cVous etes en HRP mask. Faites /hrp unmask pour reparler."
+  message-hrp-mask-status-on: "&eHRP mask: actif."
+  message-hrp-mask-status-off: "&aHRP mask: inactif."
+

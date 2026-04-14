@@ -3,20 +3,20 @@ version: '1.0'
 main: me.ar1hurgit.aevumcore.AevumCore
 api-version: '1.21'
 authors: [ ar1hurgit ]
-softdepend: [Vault]
+softdepend: [Vault, ProtocolLib]
 
 commands:
   des:
-    description: Lance un dé
+    description: Lance un de
     permission: aevumcore.player.dice
 
   maintenance:
-    description: Active ou désactive la maintenance du serveur
+    description: Active ou desactive la maintenance du serveur
     permission: aevumcore.admin.maintenance
     aliases: []
 
   lastconnexion:
-    description: Affiche la dernière connexion d'un joueur
+    description: Affiche la derniere connexion d'un joueur
     permission: aevumcore.player.lastconnexion
     aliases:
       - lastco
@@ -30,15 +30,219 @@ commands:
     description: Affiche votre temps de jeu total
     permission: aevumcore.player.playtime
 
-permissions:
+  antiafk:
+    description: Gere l'etat AFK et le systeme anti-inactivite
+    permission: aevumcore.player.antiafk
 
-  # ── Player ──────────────────────────
+  vanish:
+    description: Active ou desactive le mode vanish
+    permission: aevumcore.vanish.use
+    aliases:
+      - v
+
+  godmode:
+    description: Active ou desactive le mode invulnerable
+    permission: aevumcore.godmode.use
+    aliases:
+      - god
+
+  vision:
+    description: Active ou desactive un effet visuel permanent
+    permission: aevumcore.vision.use
+
+  nom:
+    description: Change le pseudo affiche
+    permission: aevumcore.nickname.use
+    aliases:
+      - pseudo
+
+  realname:
+    description: Affiche le vrai nom a partir d'un pseudo affiche
+    permission: aevumcore.nickname.realname
+
+  report:
+    description: Envoie un report au staff ou ferme un report
+    permission: aevumcore.player.report
+
+  reports:
+    description: Ouvre l'interface staff des reports
+    permission: aevumcore.report.view
+
+  msg:
+    description: Envoie un message prive
+    permission: aevumcore.chat.msg
+    aliases:
+      - tell
+      - w
+
+  staffchat:
+    description: Envoie un message reserve au staff
+    permission: aevumcore.chat.staffchat
+    aliases:
+      - sc
+
+  annonce:
+    description: Systeme d annonces RP et HRP
+    permission: aevumcore.chat.announce
+    aliases: []
+
+  anrp:
+    description: Alias de /annonce rp
+    permission: aevumcore.chat.announce.rp
+    aliases: []
+
+  anhrp:
+    description: Alias de /annonce hrp
+    permission: aevumcore.chat.announce.hrp
+    aliases: []
+
+  spy:
+    description: Espionne les messages prives
+    permission: aevumcore.chat.spy
+    aliases: []
+
+  hrp:
+    description: Active ou desactive le mode HRP mask
+    permission: aevumcore.chat.hrp
+    aliases: []
+
+permissions:
   aevumcore.player.dice:
-    description: Permet d'utiliser le dé
+    description: Permet d'utiliser le de
     default: true
 
   aevumcore.player.lastconnexion:
-    description: Permet de consulter sa propre dernière connexion
+    description: Permet de consulter sa propre derniere connexion
+    default: true
+
+  aevumcore.player.salary:
+    description: Permet de consulter son salaire
+    default: true
+
+  aevumcore.player.playtime:
+    description: Permet de consulter son temps de jeu
+    default: true
+
+  aevumcore.player.antiafk:
+    description: Permet d'utiliser /antiafk pour soi
+    default: true
+
+  aevumcore.player.report:
+    description: Permet d'envoyer un report au staff
+    default: true
+
+  aevumcore.vanish.use:
+    description: Permet d'activer son vanish
+    default: op
+
+  aevumcore.vanish.others:
+    description: Permet de toggle le vanish d'un autre joueur
+    default: op
+
+  aevumcore.vanish.list:
+    description: Permet d'utiliser /v list
+    default: op
+
+  aevumcore.vanish.menu:
+    description: Permet d'utiliser /v menu
+    default: op
+
+  aevumcore.vanish.teleport:
+    description: Permet la teleportation via le menu vanish
+    default: op
+
+  aevumcore.vanish.see:
+    description: Permet de voir les joueurs vanish
+    default: op
+
+  aevumcore.vanish.notify:
+    description: Recoit les notifications staff vanish
+    default: op
+
+  aevumcore.godmode.use:
+    description: Permet d'activer son god mode
+    default: op
+
+  aevumcore.godmode.others:
+    description: Permet d'activer/desactiver le god mode d'un autre joueur
+    default: op
+
+  aevumcore.godmode.notify:
+    description: Recoit les notifications staff god mode
+    default: op
+
+  aevumcore.vision.use:
+    description: Permet d'activer sa vision permanente
+    default: op
+
+  aevumcore.vision.others:
+    description: Permet d'activer/desactiver la vision d'un autre joueur
+    default: op
+
+  aevumcore.nickname.use:
+    description: Permet de changer son pseudo affiche
+    default: true
+
+  aevumcore.nickname.realname:
+    description: Permet de retrouver le vrai nom d'un joueur pseudo
+    default: op
+
+  aevumcore.nickname.bypass.cooldown:
+    description: Ignore le cooldown de changement de pseudo
+    default: op
+
+  aevumcore.report.view:
+    description: Permet de consulter et gerer les reports
+    default: op
+
+  aevumcore.report.override:
+    description: Permet de reprendre ou fermer les reports des autres
+    default: op
+
+  aevumcore.chat.msg:
+    description: Permet d'utiliser les messages prives (/msg, /tell, /w)
+    default: true
+
+  aevumcore.chat.staffchat:
+    description: Permet d'utiliser le staffchat
+    default: op
+
+  aevumcore.chat.announce:
+    description: Permission racine des annonces
+    default: op
+    children:
+      aevumcore.chat.announce.rp: true
+      aevumcore.chat.announce.hrp: true
+      aevumcore.chat.announce.royaume.decret: true
+      aevumcore.chat.announce.royaume.notif: true
+      aevumcore.chat.announce.royaume.notif.bypasscooldown: true
+
+  aevumcore.chat.announce.rp:
+    description: Permet d'envoyer une annonce RP
+    default: op
+
+  aevumcore.chat.announce.hrp:
+    description: Permet d'envoyer une annonce HRP
+    default: op
+
+  aevumcore.chat.announce.royaume.decret:
+    description: Permet d'envoyer un decret royal
+    default: op
+
+  aevumcore.chat.announce.royaume.notif:
+    description: Permet d'envoyer une notification royale
+    default: op
+
+  aevumcore.chat.announce.royaume.notif.bypasscooldown:
+    description: Ignore le cooldown des notifications royales
+    default: op
+
+  aevumcore.chat.spy:
+    description: Permet d'utiliser /spy pour espionner les MP
+    default: op
+
+  aevumcore.chat.hrp:
+    description: Permet d'utiliser /hrp mask et /hrp unmask
     default: true
 
   aevumcore.player.*:
@@ -49,10 +253,13 @@ permissions:
       aevumcore.player.lastconnexion: true
       aevumcore.player.salary: true
       aevumcore.player.playtime: true
+      aevumcore.player.antiafk: true
+      aevumcore.player.report: true
+      aevumcore.chat.msg: true
+      aevumcore.chat.hrp: true
 
-  # ── Admin ────────────────────────────
   aevumcore.admin.maintenance:
-    description: Permet d'activer / désactiver la maintenance
+    description: Permet d'activer / desactiver la maintenance
     default: op
 
   aevumcore.admin.lastconnexion:
@@ -60,7 +267,15 @@ permissions:
     default: op
 
   aevumcore.admin.salary:
-    description: Permet de gérer les salaires et grades
+    description: Permet de gerer les salaires et grades
+    default: op
+
+  aevumcore.admin.antiafk:
+    description: Permet de forcer l'etat AFK d'un joueur
+    default: op
+
+  aevumcore.antiafk.bypass:
+    description: Ignore la detection Anti-AFK automatique
     default: op
 
   aevumcore.maintenance.bypass:
@@ -73,4 +288,32 @@ permissions:
     children:
       aevumcore.admin.maintenance: true
       aevumcore.admin.lastconnexion: true
+      aevumcore.admin.salary: true
+      aevumcore.admin.antiafk: true
+      aevumcore.antiafk.bypass: true
       aevumcore.maintenance.bypass: true
+      aevumcore.vanish.use: true
+      aevumcore.vanish.others: true
+      aevumcore.vanish.list: true
+      aevumcore.vanish.menu: true
+      aevumcore.vanish.teleport: true
+      aevumcore.vanish.see: true
+      aevumcore.vanish.notify: true
+      aevumcore.godmode.use: true
+      aevumcore.godmode.others: true
+      aevumcore.godmode.notify: true
+      aevumcore.vision.use: true
+      aevumcore.vision.others: true
+      aevumcore.nickname.use: true
+      aevumcore.nickname.realname: true
+      aevumcore.nickname.bypass.cooldown: true
+      aevumcore.report.view: true
+      aevumcore.report.override: true
+      aevumcore.chat.staffchat: true
+      aevumcore.chat.announce: true
+      aevumcore.chat.announce.rp: true
+      aevumcore.chat.announce.hrp: true
+      aevumcore.chat.announce.royaume.decret: true
+      aevumcore.chat.announce.royaume.notif: true
+      aevumcore.chat.announce.royaume.notif.bypasscooldown: true
+      aevumcore.chat.spy: true

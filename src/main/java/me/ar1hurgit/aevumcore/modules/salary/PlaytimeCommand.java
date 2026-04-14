@@ -1,4 +1,4 @@
-package me.ar1hurgit.aevumcore.modules.salary;
+    package me.ar1hurgit.aevumcore.modules.salary;
 
 import me.ar1hurgit.aevumcore.AevumCore;
 import me.ar1hurgit.aevumcore.storage.database.DatabaseManager;
