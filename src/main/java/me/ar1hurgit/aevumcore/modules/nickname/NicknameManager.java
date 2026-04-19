@@ -10,6 +10,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
 import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.Scoreboard;
@@ -550,7 +551,7 @@ public class NicknameManager {
         UUID standUuid = nameTagStandByPlayer.remove(playerUuid);
         Player owner = Bukkit.getPlayer(playerUuid);
         if (owner != null) {
-            for (org.bukkit.entity.Entity passenger : new ArrayList<>(owner.getPassengers())) {
+            for (Entity passenger : new ArrayList<>(owner.getPassengers())) {
                 if (isManagedNameTag(passenger, playerUuid, standUuid) || looksLikeLegacyNameTagPassenger(passenger)) {
                     passenger.remove();
                 }
@@ -558,7 +559,7 @@ public class NicknameManager {
         }
 
         for (World world : Bukkit.getWorlds()) {
-            for (org.bukkit.entity.Entity entity : new ArrayList<>(world.getEntities())) {
+            for (Entity entity : new ArrayList<>(world.getEntities())) {
                 if (isManagedNameTag(entity, playerUuid, standUuid)) {
                     entity.remove();
                 }
@@ -568,7 +569,7 @@ public class NicknameManager {
 
     private void cleanupManagedNameTags() {
         for (World world : Bukkit.getWorlds()) {
-            for (org.bukkit.entity.Entity entity : new ArrayList<>(world.getEntities())) {
+            for (Entity entity : new ArrayList<>(world.getEntities())) {
                 if (!(entity instanceof ArmorStand)) continue;
                 if (!entity.getScoreboardTags().contains(NAME_TAG_ENTITY_TAG)) continue;
                 entity.remove();
@@ -576,7 +577,7 @@ public class NicknameManager {
         }
     }
 
-    private boolean isManagedNameTag(org.bukkit.entity.Entity entity, UUID ownerUuid, UUID standUuid) {
+    private boolean isManagedNameTag(Entity entity, UUID ownerUuid, UUID standUuid) {
         if (!(entity instanceof ArmorStand)) return false;
         if (standUuid != null && standUuid.equals(entity.getUniqueId())) return true;
 
@@ -584,7 +585,7 @@ public class NicknameManager {
         return tags.contains(NAME_TAG_ENTITY_TAG) && tags.contains(ownerTag(ownerUuid));
     }
 
-    private boolean looksLikeLegacyNameTagPassenger(org.bukkit.entity.Entity entity) {
+    private boolean looksLikeLegacyNameTagPassenger(Entity entity) {
         if (!(entity instanceof ArmorStand stand)) return false;
         return stand.isMarker()
                 && stand.isInvisible()

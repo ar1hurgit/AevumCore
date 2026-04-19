@@ -14,6 +14,7 @@ import org.bukkit.event.server.TabCompleteEvent;
 
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class NicknameListener implements Listener {
@@ -63,7 +64,7 @@ public class NicknameListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onChatTabComplete(PlayerChatTabCompleteEvent event) {
-        java.util.List<String> rewritten = manager.rewriteCompletionsForViewer(
+        List<String> rewritten = manager.rewriteCompletionsForViewer(
                 event.getPlayer(),
                 event.getChatMessage(),
                 event.getTabCompletions()

@@ -1,7 +1,7 @@
-    package me.ar1hurgit.aevumcore.modules.salary;
+package me.ar1hurgit.aevumcore.modules.salary;
 
 import me.ar1hurgit.aevumcore.AevumCore;
-import me.ar1hurgit.aevumcore.storage.database.DatabaseManager;
+import me.ar1hurgit.aevumcore.modules.lastconnection.LastConnectionModule;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
@@ -48,7 +48,7 @@ public class PlaytimeCommand implements CommandExecutor {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try (Connection con = plugin.getDatabaseManager().getConnection();
                  PreparedStatement stmt = con.prepareStatement("SELECT SUM(duration) as total FROM player_sessions WHERE uuid = ?")) {
-                
+
                 stmt.setString(1, uuid.toString());
                 ResultSet rs = stmt.executeQuery();
                 long totalRecorded = 0;
@@ -57,12 +57,10 @@ public class PlaytimeCommand implements CommandExecutor {
                 }
 
                 long finalTotal = totalRecorded;
-                
-                // If online, add current session duration
+
                 if (target.isOnline()) {
-                    me.ar1hurgit.aevumcore.modules.lastconnection.LastConnectionModule module = 
-                        (me.ar1hurgit.aevumcore.modules.lastconnection.LastConnectionModule) plugin.getModuleManager().get("lastconnection");
-                    
+                    LastConnectionModule module = (LastConnectionModule) plugin.getModuleManager().get("lastconnection");
+
                     if (module != null && module.getListener() != null) {
                         Long loginTime = module.getListener().getLoginTimes().get(uuid);
                         if (loginTime != null) {

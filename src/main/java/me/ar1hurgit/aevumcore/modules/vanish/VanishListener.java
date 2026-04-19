@@ -32,6 +32,8 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.server.TabCompleteEvent;
 import org.bukkit.inventory.InventoryHolder;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class VanishListener implements Listener {
@@ -221,7 +223,7 @@ public class VanishListener implements Listener {
     public void onServerTabComplete(TabCompleteEvent event) {
         if (!(event.getSender() instanceof Player player)) return;
         if (manager.canSeeVanished(player)) return;
-        java.util.List<String> filtered = new java.util.ArrayList<>(event.getCompletions());
+        List<String> filtered = new ArrayList<>(event.getCompletions());
         filtered.removeIf(manager::isVanishedName);
         event.setCompletions(filtered);
     }

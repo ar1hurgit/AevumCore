@@ -7,8 +7,10 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Stream;
 
 public class SpyCommand implements CommandExecutor, TabCompleter {
 
@@ -57,11 +59,11 @@ public class SpyCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             String token = args[0].toLowerCase(Locale.ROOT);
-            return java.util.stream.Stream.of("on", "off")
+            return Stream.of("on", "off")
                     .filter(value -> value.startsWith(token))
                     .toList();
         }
-        return java.util.Collections.emptyList();
+        return Collections.emptyList();
     }
 
     private void sendStateMessage(Player player, boolean enabled) {

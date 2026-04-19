@@ -28,7 +28,7 @@ public class FirstJoinModule extends AbstractModule {
         // ===== Vault optional =====
         if (plugin.getServer().getPluginManager().getPlugin("Vault") != null) {
             RegisteredServiceProvider<Economy> rsp =
-                    plugin.getServer().getServicesManager().getRegistration(net.milkbowl.vault.economy.Economy.class);
+                    plugin.getServer().getServicesManager().getRegistration(Economy.class);
 
             if (rsp != null) {
                 economy = rsp.getProvider();
