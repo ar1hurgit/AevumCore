@@ -8,18 +8,8 @@ import me.ar1hurgit.aevumcore.storage.database.DatabaseManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.World;
-import org.bukkit.entity.ArmorStand;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
-import org.bukkit.scoreboard.Scoreboard;
-import org.bukkit.scoreboard.Team;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -33,50 +23,49 @@ import java.util.function.Consumer;
 
 public class NicknameManager {
 
-    private static final String HIDDEN_NAMETAG_TEAM = "ac_nick_hide";
-    private static final String NAME_TAG_ENTITY_TAG = "aevumcore_nickname_tag";
-    private static final String NAME_TAG_OWNER_PREFIX = "aevumcore_nick_owner_";
-
     private final AevumCore plugin;
     private final DatabaseManager databaseManager;
+    private final NicknameRepository repository;
+    private final NicknameNameTagService nameTagService;
 
     private final Map<UUID, String> nicknameByUuid = new ConcurrentHashMap<>();
     private final Map<String, UUID> uuidByNicknameLower = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastChangeByUuid = new ConcurrentHashMap<>();
     private final Set<UUID> loadingPlayers = ConcurrentHashMap.newKeySet();
-    private final Map<UUID, UUID> nameTagStandByPlayer = new ConcurrentHashMap<>();
 
     public NicknameManager(AevumCore plugin, DatabaseManager databaseManager) {
         this.plugin = plugin;
         this.databaseManager = databaseManager;
+        this.repository = new NicknameRepository(databaseManager, plugin.getLogger());
+        this.nameTagService = new NicknameNameTagService();
     }
 
     public void enable() {
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            createTableIfNeeded();
-            loadAllFromDatabase();
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                cleanupManagedNameTags();
-                applyToOnlinePlayers();
-            });
-        });
+        databaseManager.supplyAsync(() -> {
+            repository.initializeSchema();
+            return repository.loadAllNicknames();
+        }).whenComplete((loadedNicknames, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+            if (!plugin.isEnabled()) {
+                return;
+            }
+
+            if (throwable != null) {
+                plugin.getLogger().severe("[Nickname] Erreur d'initialisation : " + throwable.getMessage());
+                return;
+            }
+
+            applyLoadedNicknames(loadedNicknames);
+            nameTagService.cleanupManagedNameTags();
+            applyToOnlinePlayers();
+        }));
     }
 
     public void disable() {
-        for (UUID uuid : new ArrayList<>(nameTagStandByPlayer.keySet())) {
-            removeNameTag(uuid);
-        }
-        Team team = getOrCreateHiddenNameTagTeam();
-        if (team != null) {
-            for (String entry : new ArrayList<>(team.getEntries())) {
-                team.removeEntry(entry);
-            }
-        }
+        nameTagService.clearAll();
         nicknameByUuid.clear();
         uuidByNicknameLower.clear();
         lastChangeByUuid.clear();
         loadingPlayers.clear();
-        nameTagStandByPlayer.clear();
     }
 
     public void handleJoin(Player player) {
@@ -88,46 +77,36 @@ public class NicknameManager {
 
         if (!loadingPlayers.add(player.getUniqueId())) return;
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            String nickname = null;
-            long lastChange = 0L;
+        databaseManager.supplyAsync(() -> repository.loadPlayer(player.getUniqueId()))
+                .whenComplete((playerNickname, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    loadingPlayers.remove(player.getUniqueId());
+                    if (!plugin.isEnabled()) {
+                        return;
+                    }
 
-            try (Connection con = databaseManager.getConnection();
-                 PreparedStatement stmt = con.prepareStatement("SELECT nickname, last_change FROM player_nicknames WHERE uuid = ?")) {
-                stmt.setString(1, player.getUniqueId().toString());
-                ResultSet rs = stmt.executeQuery();
-                if (rs.next()) {
-                    nickname = rs.getString("nickname");
-                    lastChange = rs.getLong("last_change");
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().severe("[Nickname] Erreur chargement joueur " + player.getUniqueId() + " : " + e.getMessage());
-            }
+                    if (throwable != null) {
+                        plugin.getLogger().severe("[Nickname] Erreur chargement joueur " + player.getUniqueId() + " : " + throwable.getMessage());
+                        return;
+                    }
 
-            final String finalNickname = sanitizeNickname(nickname);
-            final long finalLastChange = lastChange;
-
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                loadingPlayers.remove(player.getUniqueId());
-
-                if (finalNickname != null) {
-                    nicknameByUuid.put(player.getUniqueId(), finalNickname);
-                    uuidByNicknameLower.put(finalNickname.toLowerCase(Locale.ROOT), player.getUniqueId());
-                    applyDisplay(player, finalNickname);
-                }
-                lastChangeByUuid.put(player.getUniqueId(), finalLastChange);
-            });
-        });
+                    String finalNickname = sanitizeNickname(playerNickname.nickname());
+                    if (finalNickname != null) {
+                        nicknameByUuid.put(player.getUniqueId(), finalNickname);
+                        uuidByNicknameLower.put(finalNickname.toLowerCase(Locale.ROOT), player.getUniqueId());
+                        applyDisplay(player, finalNickname);
+                    }
+                    lastChangeByUuid.put(player.getUniqueId(), playerNickname.lastChange());
+                }));
     }
 
     public void handleQuit(Player player) {
         loadingPlayers.remove(player.getUniqueId());
-        removeNameTag(player.getUniqueId());
+        nameTagService.removeNameTag(player.getUniqueId());
     }
 
     public void handleDeath(Player player) {
         if (player == null) return;
-        removeNameTag(player.getUniqueId());
+        nameTagService.removeNameTag(player.getUniqueId());
     }
 
     public void handleRespawn(Player player) {
@@ -180,61 +159,46 @@ public class NicknameManager {
             }
         }
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try (Connection con = databaseManager.getConnection()) {
-                if (!clearNickname && isNicknameTakenByOther(con, player.getUniqueId(), nickname)) {
-                    Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage(prefix() + ChatColor.RED + " Ce pseudo est deja utilise."));
-                    return;
-                }
-
-                if (clearNickname) {
-                    try (PreparedStatement delete = con.prepareStatement("DELETE FROM player_nicknames WHERE uuid = ?")) {
-                        delete.setString(1, player.getUniqueId().toString());
-                        delete.executeUpdate();
-                    }
-                } else {
-                    boolean updated;
-                    try (PreparedStatement update = con.prepareStatement("UPDATE player_nicknames SET nickname = ?, last_change = ? WHERE uuid = ?")) {
-                        update.setString(1, nickname);
-                        update.setLong(2, now);
-                        update.setString(3, player.getUniqueId().toString());
-                        updated = update.executeUpdate() > 0;
+        databaseManager.supplyAsync(() -> clearNickname
+                        ? (repository.clearNickname(player.getUniqueId())
+                        ? NicknameRepository.SaveResult.SUCCESS
+                        : NicknameRepository.SaveResult.ERROR)
+                        : repository.saveNickname(player.getUniqueId(), nickname, now))
+                .whenComplete((result, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!plugin.isEnabled()) {
+                        return;
                     }
 
-                    if (!updated) {
-                        try (PreparedStatement insert = con.prepareStatement("INSERT INTO player_nicknames (uuid, nickname, last_change) VALUES (?, ?, ?)")) {
-                            insert.setString(1, player.getUniqueId().toString());
-                            insert.setString(2, nickname);
-                            insert.setLong(3, now);
-                            insert.executeUpdate();
+                    if (throwable != null || result == NicknameRepository.SaveResult.ERROR) {
+                        player.sendMessage(prefix() + ChatColor.RED + " Erreur SQL lors du changement de pseudo.");
+                        if (throwable != null) {
+                            plugin.getLogger().severe("[Nickname] Echec async sur " + player.getUniqueId() + " : " + throwable.getMessage());
                         }
+                        return;
                     }
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().severe("[Nickname] Erreur changement pseudo " + player.getUniqueId() + " : " + e.getMessage());
-                Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage(prefix() + ChatColor.RED + " Erreur SQL lors du changement de pseudo."));
-                return;
-            }
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                String previous = nicknameByUuid.remove(player.getUniqueId());
-                if (previous != null) {
-                    uuidByNicknameLower.remove(previous.toLowerCase(Locale.ROOT));
-                }
+                    if (result == NicknameRepository.SaveResult.ALREADY_TAKEN) {
+                        player.sendMessage(prefix() + ChatColor.RED + " Ce pseudo est deja utilise.");
+                        return;
+                    }
 
-                if (clearNickname) {
-                    resetDisplay(player);
-                    player.sendMessage(prefix() + ChatColor.YELLOW + " Votre pseudo affiche a ete reinitialise.");
-                } else {
-                    nicknameByUuid.put(player.getUniqueId(), nickname);
-                    uuidByNicknameLower.put(nickname.toLowerCase(Locale.ROOT), player.getUniqueId());
-                    applyDisplay(player, nickname);
-                    player.sendMessage(prefix() + ChatColor.GREEN + " Nouveau pseudo affiche: " + ChatColor.GOLD + nickname);
-                }
+                    String previous = nicknameByUuid.remove(player.getUniqueId());
+                    if (previous != null) {
+                        uuidByNicknameLower.remove(previous.toLowerCase(Locale.ROOT));
+                    }
 
-                lastChangeByUuid.put(player.getUniqueId(), now);
-            });
-        });
+                    if (clearNickname) {
+                        resetDisplay(player);
+                        player.sendMessage(prefix() + ChatColor.YELLOW + " Votre pseudo affiche a ete reinitialise.");
+                    } else {
+                        nicknameByUuid.put(player.getUniqueId(), nickname);
+                        uuidByNicknameLower.put(nickname.toLowerCase(Locale.ROOT), player.getUniqueId());
+                        applyDisplay(player, nickname);
+                        player.sendMessage(prefix() + ChatColor.GREEN + " Nouveau pseudo affiche: " + ChatColor.GOLD + nickname);
+                    }
+
+                    lastChangeByUuid.put(player.getUniqueId(), now);
+                }));
     }
 
     public void findRealNameByDisplayed(String displayedName, Consumer<String> callback) {
@@ -250,23 +214,16 @@ public class NicknameManager {
             return;
         }
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            UUID found = null;
+        databaseManager.supplyAsync(() -> repository.findUuidByNickname(normalized))
+                .whenComplete((foundUuid, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (throwable != null) {
+                        plugin.getLogger().severe("[Nickname] Erreur recherche pseudo " + normalized + " : " + throwable.getMessage());
+                        callback.accept(null);
+                        return;
+                    }
 
-            try (Connection con = databaseManager.getConnection();
-                 PreparedStatement stmt = con.prepareStatement("SELECT uuid FROM player_nicknames WHERE LOWER(nickname) = LOWER(?)")) {
-                stmt.setString(1, normalized);
-                ResultSet rs = stmt.executeQuery();
-                if (rs.next()) {
-                    found = UUID.fromString(rs.getString("uuid"));
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().severe("[Nickname] Erreur recherche realname: " + e.getMessage());
-            }
-
-            UUID finalFound = found;
-            Bukkit.getScheduler().runTask(plugin, () -> callback.accept(finalFound == null ? null : resolveRealName(finalFound)));
-        });
+                    callback.accept(foundUuid == null ? null : resolveRealName(foundUuid));
+                }));
     }
 
     public List<String> getKnownDisplayedNames() {
@@ -339,47 +296,32 @@ public class NicknameManager {
         if (player == null) return;
 
         if (vanished) {
-            removeNameTag(player.getUniqueId());
+            nameTagService.removeNameTag(player.getUniqueId());
             return;
         }
 
         String nickname = nicknameByUuid.get(player.getUniqueId());
         if (nickname == null) return;
 
-        ensureHiddenRealName(player);
-        ensureNameTag(player, nickname);
+        nameTagService.ensureHiddenRealName(player);
+        nameTagService.ensureNameTag(player, nickname);
     }
 
-    private boolean isNicknameTakenByOther(Connection con, UUID requester, String nickname) throws SQLException {
-        try (PreparedStatement stmt = con.prepareStatement("SELECT uuid FROM player_nicknames WHERE LOWER(nickname) = LOWER(?)")) {
-            stmt.setString(1, nickname);
-            ResultSet rs = stmt.executeQuery();
-            if (!rs.next()) return false;
-            String uuid = rs.getString("uuid");
-            return !requester.toString().equalsIgnoreCase(uuid);
-        }
-    }
-
-    private void loadAllFromDatabase() {
+    private void applyLoadedNicknames(NicknameRepository.LoadedNicknames loadedNicknames) {
         nicknameByUuid.clear();
         uuidByNicknameLower.clear();
+        lastChangeByUuid.clear();
 
-        try (Connection con = databaseManager.getConnection();
-             PreparedStatement stmt = con.prepareStatement("SELECT uuid, nickname, last_change FROM player_nicknames")) {
-            ResultSet rs = stmt.executeQuery();
-            while (rs.next()) {
-                UUID uuid = UUID.fromString(rs.getString("uuid"));
-                String nickname = sanitizeNickname(rs.getString("nickname"));
-                long lastChange = rs.getLong("last_change");
+        lastChangeByUuid.putAll(loadedNicknames.lastChanges());
 
-                lastChangeByUuid.put(uuid, lastChange);
-                if (nickname == null) continue;
-
-                nicknameByUuid.put(uuid, nickname);
-                uuidByNicknameLower.put(nickname.toLowerCase(Locale.ROOT), uuid);
+        for (Map.Entry<UUID, String> entry : loadedNicknames.nicknames().entrySet()) {
+            String nickname = sanitizeNickname(entry.getValue());
+            if (nickname == null) {
+                continue;
             }
-        } catch (SQLException e) {
-            plugin.getLogger().severe("[Nickname] Erreur chargement global des pseudos : " + e.getMessage());
+
+            nicknameByUuid.put(entry.getKey(), nickname);
+            uuidByNicknameLower.put(nickname.toLowerCase(Locale.ROOT), entry.getKey());
         }
     }
 
@@ -391,20 +333,6 @@ public class NicknameManager {
             } else {
                 resetDisplay(player);
             }
-        }
-    }
-
-    private void createTableIfNeeded() {
-        try (Connection con = databaseManager.getConnection();
-             PreparedStatement stmt = con.prepareStatement(
-                     "CREATE TABLE IF NOT EXISTS player_nicknames (" +
-                             "uuid VARCHAR(36) PRIMARY KEY," +
-                             "nickname VARCHAR(64)," +
-                             "last_change BIGINT NOT NULL DEFAULT 0" +
-                             ")")) {
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().severe("[Nickname] Erreur creation table player_nicknames : " + e.getMessage());
         }
     }
 
@@ -420,7 +348,7 @@ public class NicknameManager {
         player.setCustomNameVisible(true);
         player.setPlayerListName(sanitized);
 
-        ensureHiddenRealName(player);
+        nameTagService.ensureHiddenRealName(player);
         refreshForVanishState(player, isVanished(player));
         refreshNameplateForViewers(player);
         syncWithVanish(player, sanitized);
@@ -432,8 +360,8 @@ public class NicknameManager {
         player.setCustomName(null);
         player.setCustomNameVisible(false);
         player.setPlayerListName(real);
-        removeHiddenRealName(player);
-        removeNameTag(player.getUniqueId());
+        nameTagService.removeHiddenRealName(player);
+        nameTagService.removeNameTag(player.getUniqueId());
         refreshNameplateForViewers(player);
         syncWithVanish(player, real);
     }
@@ -498,103 +426,6 @@ public class NicknameManager {
         String trimmed = value.trim();
         if (trimmed.isEmpty()) return null;
         return trimmed;
-    }
-
-    private void ensureHiddenRealName(Player player) {
-        Team team = getOrCreateHiddenNameTagTeam();
-        if (team == null) return;
-        if (!team.hasEntry(player.getName())) {
-            team.addEntry(player.getName());
-        }
-    }
-
-    private void removeHiddenRealName(Player player) {
-        Team team = getOrCreateHiddenNameTagTeam();
-        if (team != null && team.hasEntry(player.getName())) {
-            team.removeEntry(player.getName());
-        }
-    }
-
-    private Team getOrCreateHiddenNameTagTeam() {
-        Scoreboard scoreboard = Bukkit.getScoreboardManager() == null ? null : Bukkit.getScoreboardManager().getMainScoreboard();
-        if (scoreboard == null) return null;
-
-        Team team = scoreboard.getTeam(HIDDEN_NAMETAG_TEAM);
-        if (team == null) {
-            team = scoreboard.registerNewTeam(HIDDEN_NAMETAG_TEAM);
-            team.setOption(Team.Option.NAME_TAG_VISIBILITY, Team.OptionStatus.NEVER);
-        }
-        return team;
-    }
-
-    private void ensureNameTag(Player player, String nickname) {
-        removeNameTag(player.getUniqueId());
-
-        World world = player.getWorld();
-        ArmorStand stand = (ArmorStand) world.spawnEntity(player.getLocation(), EntityType.ARMOR_STAND);
-        stand.setMarker(true);
-        stand.setInvisible(true);
-        stand.setGravity(false);
-        stand.setInvulnerable(true);
-        stand.setSilent(true);
-        stand.setBasePlate(false);
-        stand.setCustomName(nickname);
-        stand.setCustomNameVisible(true);
-        stand.addScoreboardTag(NAME_TAG_ENTITY_TAG);
-        stand.addScoreboardTag(ownerTag(player.getUniqueId()));
-
-        player.addPassenger(stand);
-        nameTagStandByPlayer.put(player.getUniqueId(), stand.getUniqueId());
-    }
-
-    private void removeNameTag(UUID playerUuid) {
-        UUID standUuid = nameTagStandByPlayer.remove(playerUuid);
-        Player owner = Bukkit.getPlayer(playerUuid);
-        if (owner != null) {
-            for (Entity passenger : new ArrayList<>(owner.getPassengers())) {
-                if (isManagedNameTag(passenger, playerUuid, standUuid) || looksLikeLegacyNameTagPassenger(passenger)) {
-                    passenger.remove();
-                }
-            }
-        }
-
-        for (World world : Bukkit.getWorlds()) {
-            for (Entity entity : new ArrayList<>(world.getEntities())) {
-                if (isManagedNameTag(entity, playerUuid, standUuid)) {
-                    entity.remove();
-                }
-            }
-        }
-    }
-
-    private void cleanupManagedNameTags() {
-        for (World world : Bukkit.getWorlds()) {
-            for (Entity entity : new ArrayList<>(world.getEntities())) {
-                if (!(entity instanceof ArmorStand)) continue;
-                if (!entity.getScoreboardTags().contains(NAME_TAG_ENTITY_TAG)) continue;
-                entity.remove();
-            }
-        }
-    }
-
-    private boolean isManagedNameTag(Entity entity, UUID ownerUuid, UUID standUuid) {
-        if (!(entity instanceof ArmorStand)) return false;
-        if (standUuid != null && standUuid.equals(entity.getUniqueId())) return true;
-
-        Set<String> tags = entity.getScoreboardTags();
-        return tags.contains(NAME_TAG_ENTITY_TAG) && tags.contains(ownerTag(ownerUuid));
-    }
-
-    private boolean looksLikeLegacyNameTagPassenger(Entity entity) {
-        if (!(entity instanceof ArmorStand stand)) return false;
-        return stand.isMarker()
-                && stand.isInvisible()
-                && stand.isSilent()
-                && stand.isCustomNameVisible();
-    }
-
-    private String ownerTag(UUID ownerUuid) {
-        return NAME_TAG_OWNER_PREFIX + ownerUuid;
     }
 
     private String extractCurrentToken(String buffer) {

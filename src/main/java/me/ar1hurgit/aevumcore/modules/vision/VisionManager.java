@@ -1,20 +1,16 @@
 package me.ar1hurgit.aevumcore.modules.vision;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.storage.database.DatabaseManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -23,18 +19,19 @@ import java.util.concurrent.ConcurrentHashMap;
 public class VisionManager {
 
     private final AevumCore plugin;
+    private final DatabaseManager databaseManager;
+    private final VisionDataStore dataStore;
     private final Set<UUID> enabledPlayers = ConcurrentHashMap.newKeySet();
-
-    private File dataFile;
-    private FileConfiguration dataConfig;
 
     private PotionEffectType effectType;
     private int effectAmplifier;
 
     private BukkitTask syncTask;
 
-    public VisionManager(AevumCore plugin) {
+    public VisionManager(AevumCore plugin, DatabaseManager databaseManager) {
         this.plugin = plugin;
+        this.databaseManager = databaseManager;
+        this.dataStore = new VisionDataStore(plugin, databaseManager);
     }
 
     public void enable() {
@@ -63,7 +60,7 @@ public class VisionManager {
             }
         }
 
-        saveData();
+        saveDataSync();
         enabledPlayers.clear();
     }
 
@@ -148,45 +145,20 @@ public class VisionManager {
     }
 
     private void loadData() {
-        if (!plugin.getDataFolder().exists()) {
-            plugin.getDataFolder().mkdirs();
-        }
-
-        dataFile = new File(plugin.getDataFolder(), "vision.yml");
-        if (!dataFile.exists()) {
-            try {
-                dataFile.createNewFile();
-            } catch (IOException e) {
-                plugin.getLogger().severe("[Vision] Impossible de creer vision.yml: " + e.getMessage());
-            }
-        }
-
-        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
-
         enabledPlayers.clear();
-        List<String> rawList = dataConfig.getStringList("enabled");
-        for (String raw : rawList) {
-            try {
-                enabledPlayers.add(UUID.fromString(raw));
-            } catch (IllegalArgumentException ignored) {
-            }
-        }
+        enabledPlayers.addAll(dataStore.loadEnabledPlayers());
     }
 
     private void saveData() {
-        if (dataConfig == null || dataFile == null) return;
+        databaseManager.runAsync(() -> dataStore.saveEnabledPlayers(enabledPlayers))
+                .exceptionally(throwable -> {
+                    plugin.getLogger().severe("[Vision] Echec sauvegarde SQL : " + throwable.getMessage());
+                    return null;
+                });
+    }
 
-        List<String> serialized = enabledPlayers.stream()
-                .map(UUID::toString)
-                .sorted()
-                .toList();
-        dataConfig.set("enabled", serialized);
-
-        try {
-            dataConfig.save(dataFile);
-        } catch (IOException e) {
-            plugin.getLogger().severe("[Vision] Impossible de sauvegarder vision.yml: " + e.getMessage());
-        }
+    private void saveDataSync() {
+        dataStore.saveEnabledPlayers(enabledPlayers);
     }
 
     private String prefix() {

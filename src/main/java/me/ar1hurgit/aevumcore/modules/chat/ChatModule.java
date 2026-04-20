@@ -1,6 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.chat;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.core.command.CommandBindings;
 import me.ar1hurgit.aevumcore.core.module.AbstractModule;
 import me.ar1hurgit.aevumcore.core.module.Module;
 import me.ar1hurgit.aevumcore.modules.nickname.NicknameManager;
@@ -13,15 +14,6 @@ import org.bukkit.Sound;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.StandardOpenOption;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -42,22 +34,21 @@ import java.util.regex.Pattern;
 
 public class ChatModule extends AbstractModule {
 
-    private static final DateTimeFormatter LOG_DATE_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
-
     private final AevumCore plugin;
     private final DatabaseManager databaseManager;
+    private final ChatRoyalMailRepository royalMailRepository;
+    private final ChatLogService chatLogService;
     private final Object royalNotifLock = new Object();
-    private final Object logLock = new Object();
     private final Set<UUID> spyEnabledPlayers = ConcurrentHashMap.newKeySet();
     private final Set<UUID> hrpMaskedPlayers = ConcurrentHashMap.newKeySet();
 
     private volatile long lastRoyalNotifAt = 0L;
-    private File chatLogFile;
 
     public ChatModule(AevumCore plugin) {
         this.plugin = plugin;
         this.databaseManager = plugin.getDatabaseManager();
+        this.royalMailRepository = new ChatRoyalMailRepository(plugin.getDatabaseManager(), plugin.getLogger());
+        this.chatLogService = new ChatLogService(plugin);
     }
 
     @Override
@@ -71,54 +62,29 @@ public class ChatModule extends AbstractModule {
             return;
         }
 
-        ensureLogFile();
         createMailboxTableAsync();
 
         ChatListener listener = new ChatListener(plugin, this);
         plugin.getServer().getPluginManager().registerEvents(listener, plugin);
 
         MessageCommand messageCommand = new MessageCommand(this);
-        if (plugin.getCommand("msg") != null) {
-            plugin.getCommand("msg").setExecutor(messageCommand);
-            plugin.getCommand("msg").setTabCompleter(messageCommand);
-        }
-        if (plugin.getCommand("tell") != null) {
-            plugin.getCommand("tell").setExecutor(messageCommand);
-            plugin.getCommand("tell").setTabCompleter(messageCommand);
-        }
-        if (plugin.getCommand("w") != null) {
-            plugin.getCommand("w").setExecutor(messageCommand);
-            plugin.getCommand("w").setTabCompleter(messageCommand);
-        }
+        CommandBindings.bind(plugin, "msg", messageCommand, messageCommand);
+        CommandBindings.bind(plugin, "tell", messageCommand, messageCommand);
+        CommandBindings.bind(plugin, "w", messageCommand, messageCommand);
 
         StaffChatCommand staffChatCommand = new StaffChatCommand(this);
-        if (plugin.getCommand("staffchat") != null) {
-            plugin.getCommand("staffchat").setExecutor(staffChatCommand);
-        }
+        CommandBindings.bind(plugin, "staffchat", staffChatCommand);
 
         AnnounceCommand announceCommand = new AnnounceCommand(this);
-        if (plugin.getCommand("annonce") != null) {
-            plugin.getCommand("annonce").setExecutor(announceCommand);
-            plugin.getCommand("annonce").setTabCompleter(announceCommand);
-        }
-        if (plugin.getCommand("anrp") != null) {
-            plugin.getCommand("anrp").setExecutor(announceCommand);
-        }
-        if (plugin.getCommand("anhrp") != null) {
-            plugin.getCommand("anhrp").setExecutor(announceCommand);
-        }
+        CommandBindings.bind(plugin, "annonce", announceCommand, announceCommand);
+        CommandBindings.bind(plugin, "anrp", announceCommand);
+        CommandBindings.bind(plugin, "anhrp", announceCommand);
 
         SpyCommand spyCommand = new SpyCommand(this);
-        if (plugin.getCommand("spy") != null) {
-            plugin.getCommand("spy").setExecutor(spyCommand);
-            plugin.getCommand("spy").setTabCompleter(spyCommand);
-        }
+        CommandBindings.bind(plugin, "spy", spyCommand, spyCommand);
 
         HrpCommand hrpCommand = new HrpCommand(this);
-        if (plugin.getCommand("hrp") != null) {
-            plugin.getCommand("hrp").setExecutor(hrpCommand);
-            plugin.getCommand("hrp").setTabCompleter(hrpCommand);
-        }
+        CommandBindings.bind(plugin, "hrp", hrpCommand, hrpCommand);
 
         Bukkit.getLogger().info(plugin.getConfig().getString("prefix", "[AevumCore]") + " Chat module enabled");
     }
@@ -320,29 +286,11 @@ public class ChatModule extends AbstractModule {
         }
         recipients.addAll(onlineUuids);
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try (Connection con = databaseManager.getConnection()) {
-                createMailboxTable(con);
-                try (PreparedStatement stmt = con.prepareStatement(
-                        "INSERT INTO chat_royal_mailbox (mail_id, player_uuid, sender_name, mail_type, content, created_at, delivered) " +
-                                "VALUES (?, ?, ?, ?, ?, ?, ?)"
-                )) {
-                    for (UUID recipient : recipients) {
-                        stmt.setString(1, UUID.randomUUID().toString());
-                        stmt.setString(2, recipient.toString());
-                        stmt.setString(3, senderName);
-                        stmt.setString(4, "decret");
-                        stmt.setString(5, sanitizeMessage(message));
-                        stmt.setLong(6, createdAt);
-                        stmt.setInt(7, onlineUuids.contains(recipient) ? 1 : 0);
-                        stmt.addBatch();
-                    }
-                    stmt.executeBatch();
-                }
-            } catch (SQLException exception) {
-                plugin.getLogger().severe("[Chat] Impossible d'enregistrer le decret royal : " + exception.getMessage());
-            }
-        });
+        databaseManager.runAsync(() -> royalMailRepository.storeRoyalDecree(senderName, sanitizeMessage(message), createdAt, recipients, onlineUuids))
+                .exceptionally(throwable -> {
+                    plugin.getLogger().severe("[Chat] Echec stockage decret royal : " + throwable.getMessage());
+                    return null;
+                });
 
         for (Player onlinePlayer : onlinePlayers) {
             sendRoyalDecreeLetter(onlinePlayer, senderName, message, createdAt);
@@ -358,53 +306,27 @@ public class ChatModule extends AbstractModule {
         }
 
         UUID uuid = player.getUniqueId();
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            List<RoyalMailEntry> pending = new ArrayList<>();
-
-            try (Connection con = databaseManager.getConnection()) {
-                createMailboxTable(con);
-                try (PreparedStatement stmt = con.prepareStatement(
-                        "SELECT mail_id, sender_name, content, created_at " +
-                                "FROM chat_royal_mailbox " +
-                                "WHERE player_uuid = ? AND mail_type = 'decret' AND delivered = 0 " +
-                                "ORDER BY created_at ASC"
-                )) {
-                    stmt.setString(1, uuid.toString());
-                    ResultSet rs = stmt.executeQuery();
-                    while (rs.next()) {
-                        pending.add(new RoyalMailEntry(
-                                rs.getString("mail_id"),
-                                rs.getString("sender_name"),
-                                rs.getString("content"),
-                                rs.getLong("created_at")
-                        ));
+        databaseManager.supplyAsync(() -> royalMailRepository.loadPendingRoyalDecrees(uuid))
+                .whenComplete((pending, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (throwable != null) {
+                        plugin.getLogger().severe("[Chat] Echec lecture boite royale " + uuid + " : " + throwable.getMessage());
+                        return;
                     }
-                }
-            } catch (SQLException exception) {
-                plugin.getLogger().severe("[Chat] Impossible de lire la boite aux lettres royale : " + exception.getMessage());
-                return;
-            }
 
-            if (pending.isEmpty()) {
-                return;
-            }
+                    if (pending.isEmpty() || !player.isOnline()) {
+                        return;
+                    }
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (!player.isOnline()) {
-                    return;
-                }
+                    List<String> deliveredIds = new ArrayList<>();
+                    for (ChatRoyalMailRepository.RoyalMailEntry entry : pending) {
+                        sendRoyalDecreeLetter(player, entry.senderName(), entry.content(), entry.createdAt());
+                        deliveredIds.add(entry.mailId());
+                    }
 
-                List<String> deliveredIds = new ArrayList<>();
-                for (RoyalMailEntry entry : pending) {
-                    sendRoyalDecreeLetter(player, entry.senderName(), entry.content(), entry.createdAt());
-                    deliveredIds.add(entry.mailId());
-                }
-
-                if (!deliveredIds.isEmpty()) {
-                    markRoyalMailDeliveredAsync(deliveredIds);
-                }
-            });
-        });
+                    if (!deliveredIds.isEmpty()) {
+                        markRoyalMailDeliveredAsync(deliveredIds);
+                    }
+                }));
     }
 
     public Sound getRpAnnouncementSound() {
@@ -454,31 +376,7 @@ public class ChatModule extends AbstractModule {
         if (!getBoolean("log-chat", false)) {
             return;
         }
-        ensureLogFile();
-        if (chatLogFile == null) {
-            return;
-        }
-
-        String line = "[" + LOG_DATE_FORMAT.format(Instant.now()) + "] "
-                + "[" + safe(category) + "] "
-                + safe(actor) + " : "
-                + safe(content) + System.lineSeparator();
-
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            synchronized (logLock) {
-                try {
-                    Files.writeString(
-                            chatLogFile.toPath(),
-                            line,
-                            StandardCharsets.UTF_8,
-                            StandardOpenOption.CREATE,
-                            StandardOpenOption.APPEND
-                    );
-                } catch (IOException exception) {
-                    plugin.getLogger().warning("[Chat] Impossible d'ecrire le log chat: " + exception.getMessage());
-                }
-            }
-        });
+        chatLogService.append(category, actor, content);
     }
 
     public boolean setSpyEnabled(UUID playerUuid, boolean enabled) {
@@ -661,36 +559,19 @@ public class ChatModule extends AbstractModule {
     }
 
     private void createMailboxTableAsync() {
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try (Connection con = databaseManager.getConnection()) {
-                createMailboxTable(con);
-            } catch (SQLException exception) {
-                plugin.getLogger().severe("[Chat] Impossible de creer la table chat_royal_mailbox : " + exception.getMessage());
-            }
-        });
+        databaseManager.runAsync(royalMailRepository::initializeSchema)
+                .exceptionally(throwable -> {
+                    plugin.getLogger().severe("[Chat] Echec initialisation mailbox royale : " + throwable.getMessage());
+                    return null;
+                });
     }
 
     private void markRoyalMailDeliveredAsync(List<String> mailIds) {
-        if (mailIds == null || mailIds.isEmpty()) {
-            return;
-        }
-
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try (Connection con = databaseManager.getConnection()) {
-                createMailboxTable(con);
-                try (PreparedStatement stmt = con.prepareStatement(
-                        "UPDATE chat_royal_mailbox SET delivered = 1 WHERE mail_id = ?"
-                )) {
-                    for (String id : mailIds) {
-                        stmt.setString(1, id);
-                        stmt.addBatch();
-                    }
-                    stmt.executeBatch();
-                }
-            } catch (SQLException exception) {
-                plugin.getLogger().severe("[Chat] Impossible de marquer les lettres royales comme lues : " + exception.getMessage());
-            }
-        });
+        databaseManager.runAsync(() -> royalMailRepository.markDelivered(mailIds))
+                .exceptionally(throwable -> {
+                    plugin.getLogger().severe("[Chat] Echec marquage courrier royal lu : " + throwable.getMessage());
+                    return null;
+                });
     }
 
     private void sendRoyalDecreeLetter(Player target, String senderName, String message, long createdAt) {
@@ -748,25 +629,6 @@ public class ChatModule extends AbstractModule {
         return rendered.toString();
     }
 
-    private void ensureLogFile() {
-        if (chatLogFile != null) {
-            return;
-        }
-
-        try {
-            File folder = new File(plugin.getDataFolder(), "logs");
-            if (!folder.exists()) {
-                folder.mkdirs();
-            }
-            chatLogFile = new File(folder, "chat.log");
-            if (!chatLogFile.exists()) {
-                chatLogFile.createNewFile();
-            }
-        } catch (IOException exception) {
-            plugin.getLogger().warning("[Chat] Impossible de preparer chat.log : " + exception.getMessage());
-        }
-    }
-
     private String formatDate(long timestamp) {
         try {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern(
@@ -790,24 +652,5 @@ public class ChatModule extends AbstractModule {
 
     private String safe(String value) {
         return value == null ? "" : value;
-    }
-
-    private void createMailboxTable(Connection con) throws SQLException {
-        try (PreparedStatement stmt = con.prepareStatement(
-                "CREATE TABLE IF NOT EXISTS chat_royal_mailbox (" +
-                        "mail_id VARCHAR(36) PRIMARY KEY," +
-                        "player_uuid VARCHAR(36) NOT NULL," +
-                        "sender_name VARCHAR(64) NOT NULL," +
-                        "mail_type VARCHAR(16) NOT NULL," +
-                        "content TEXT NOT NULL," +
-                        "created_at BIGINT NOT NULL," +
-                        "delivered INTEGER NOT NULL DEFAULT 0" +
-                        ")"
-        )) {
-            stmt.executeUpdate();
-        }
-    }
-
-    private record RoyalMailEntry(String mailId, String senderName, String content, long createdAt) {
     }
 }

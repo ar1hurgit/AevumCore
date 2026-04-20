@@ -37,11 +37,11 @@ public final class AevumCore extends JavaPlugin {
         moduleManager.register(new MaintenanceModule(this));
         moduleManager.register(new LastConnectionModule(this, databaseManager));
         moduleManager.register(new AntiAFKModule(this));
-        moduleManager.register(new VanishModule(this));
+        moduleManager.register(new VanishModule(this, databaseManager));
         moduleManager.register(new NicknameModule(this, databaseManager));
         moduleManager.register(new ExplosionModule(this));
         moduleManager.register(new GodModeModule(this));
-        moduleManager.register(new VisionModule(this));
+        moduleManager.register(new VisionModule(this, databaseManager));
         moduleManager.register(new SalaryModule(this, databaseManager));
         moduleManager.register(new ChatModule(this));
         moduleManager.register(new ReportModule(this, databaseManager));

@@ -1,6 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.salary;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.core.command.CommandBindings;
 import me.ar1hurgit.aevumcore.core.module.AbstractModule;
 import me.ar1hurgit.aevumcore.core.module.Module;
 import me.ar1hurgit.aevumcore.modules.antiafk.AntiAFKModule;
@@ -14,9 +15,6 @@ import org.bukkit.plugin.RegisteredServiceProvider;
 
 import java.io.File;
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.UUID;
@@ -27,16 +25,19 @@ public class SalaryModule extends AbstractModule {
 
     private final AevumCore plugin;
     private final DatabaseManager databaseManager;
+    private final SalaryProgressRepository progressRepository;
     private FileConfiguration salariesConfig;
     private File salariesFile;
     private Economy economy;
     private SalaryTask salaryTask;
     private final Map<UUID, Long> progressCache = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> loadingPlayers = new ConcurrentHashMap<>();
+    private volatile boolean ready;
 
     public SalaryModule(AevumCore plugin, DatabaseManager databaseManager) {
         this.plugin = plugin;
         this.databaseManager = databaseManager;
+        this.progressRepository = new SalaryProgressRepository(databaseManager);
     }
 
     @Override
@@ -46,45 +47,51 @@ public class SalaryModule extends AbstractModule {
 
     @Override
     protected void onEnable() {
-        if (!plugin.getConfig().getBoolean("salary.enabled", true)) return;
+        if (!plugin.getConfig().getBoolean("salary.enabled", true)) {
+            return;
+        }
 
         loadSalariesConfig();
-
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try (Connection con = databaseManager.getConnection();
-                 PreparedStatement stmt = con.prepareStatement(
-                         "CREATE TABLE IF NOT EXISTS player_data (" +
-                                 "uuid VARCHAR(36) PRIMARY KEY," +
-                                 "last_salary BIGINT DEFAULT 0," +
-                                 "salary_progress BIGINT DEFAULT 0" +
-                                 ")"
-                 )) {
-                stmt.executeUpdate();
-
-                try (PreparedStatement alter = con.prepareStatement("ALTER TABLE player_data ADD COLUMN salary_progress BIGINT DEFAULT 0")) {
-                    alter.executeUpdate();
-                } catch (SQLException ignored) {
-                    // Column already exists.
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().severe("[Salary] Erreur lors de la creation de la table player_data : " + e.getMessage());
-            }
-        });
+        ready = false;
 
         if (plugin.getServer().getPluginManager().getPlugin("Vault") != null) {
             RegisteredServiceProvider<Economy> rsp = plugin.getServer().getServicesManager().getRegistration(Economy.class);
-            if (rsp != null) economy = rsp.getProvider();
+            if (rsp != null) {
+                economy = rsp.getProvider();
+            }
         }
 
-        if (plugin.getCommand("salary") != null) {
-            SalaryCommand salaryCommand = new SalaryCommand(plugin, this);
-            plugin.getCommand("salary").setExecutor(salaryCommand);
-            plugin.getCommand("salary").setTabCompleter(salaryCommand);
-        }
+        databaseManager.runAsync(progressRepository::initializeSchema)
+                .whenComplete((unused, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!plugin.isEnabled() || throwable != null) {
+                        ready = false;
+                        if (throwable != null) {
+                            plugin.getLogger().severe("[Salary] Erreur lors de la creation de la table player_data : " + throwable.getMessage());
+                        }
+                        return;
+                    }
 
-        if (plugin.getCommand("playtime") != null) {
-            plugin.getCommand("playtime").setExecutor(new PlaytimeCommand(plugin));
+                    ready = true;
+                    registerRuntime();
+                    Bukkit.getLogger().info(plugin.getConfig().getString("prefix", "[AevumCore]") + " Salary module enabled");
+                }));
+    }
+
+    @Override
+    protected void onDisable() {
+        ready = false;
+        if (salaryTask != null) {
+            salaryTask.cancel();
+            salaryTask = null;
         }
+        saveAllProgressSync();
+        Bukkit.getLogger().info(plugin.getConfig().getString("prefix", "[AevumCore]") + " Salary module disabled");
+    }
+
+    private void registerRuntime() {
+        SalaryCommand salaryCommand = new SalaryCommand(plugin, this);
+        CommandBindings.bind(plugin, "salary", salaryCommand, salaryCommand);
+        CommandBindings.bind(plugin, "playtime", new PlaytimeCommand(plugin, this));
 
         plugin.getServer().getPluginManager().registerEvents(new SalaryListener(plugin, this), plugin);
 
@@ -94,17 +101,6 @@ public class SalaryModule extends AbstractModule {
         for (Player player : Bukkit.getOnlinePlayers()) {
             loadPlayerProgress(player.getUniqueId());
         }
-
-        Bukkit.getLogger().info(plugin.getConfig().getString("prefix", "[AevumCore]") + " Salary module enabled");
-    }
-
-    @Override
-    protected void onDisable() {
-        if (salaryTask != null) {
-            salaryTask.cancel();
-        }
-        saveAllProgressSync();
-        Bukkit.getLogger().info(plugin.getConfig().getString("prefix", "[AevumCore]") + " Salary module disabled");
     }
 
     private void loadSalariesConfig() {
@@ -115,6 +111,10 @@ public class SalaryModule extends AbstractModule {
         salariesConfig = YamlConfiguration.loadConfiguration(salariesFile);
     }
 
+    public boolean isReady() {
+        return ready;
+    }
+
     public FileConfiguration getSalariesConfig() {
         return salariesConfig;
     }
@@ -122,17 +122,13 @@ public class SalaryModule extends AbstractModule {
     public void saveSalariesConfig() {
         try {
             salariesConfig.save(salariesFile);
-        } catch (IOException e) {
-            plugin.getLogger().severe("[Salary] Impossible de sauvegarder salaries.yml : " + e.getMessage());
+        } catch (IOException exception) {
+            plugin.getLogger().severe("[Salary] Impossible de sauvegarder salaries.yml : " + exception.getMessage());
         }
     }
 
     public Economy getEconomy() {
         return economy;
-    }
-
-    public DatabaseManager getDatabaseManager() {
-        return databaseManager;
     }
 
     public long getIntervalMillis() {
@@ -170,116 +166,83 @@ public class SalaryModule extends AbstractModule {
     }
 
     public void loadPlayerProgress(UUID uuid) {
-        if (isProgressLoaded(uuid) || loadingPlayers.putIfAbsent(uuid, true) != null) {
+        if (!ready || isProgressLoaded(uuid) || loadingPlayers.putIfAbsent(uuid, true) != null) {
             return;
         }
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            long progress = 0L;
+        databaseManager.supplyAsync(() -> {
+            long progress = progressRepository.loadProgress(uuid);
             long now = System.currentTimeMillis();
-            try (Connection con = databaseManager.getConnection();
-                 PreparedStatement stmt = con.prepareStatement("SELECT salary_progress FROM player_data WHERE uuid = ?")) {
-                stmt.setString(1, uuid.toString());
-                ResultSet rs = stmt.executeQuery();
-
-                if (rs.next()) {
-                    progress = Math.max(0L, rs.getLong("salary_progress"));
-                } else {
-                    try (PreparedStatement insert = con.prepareStatement("INSERT INTO player_data (uuid, last_salary, salary_progress) VALUES (?, ?, ?)")) {
-                        insert.setString(1, uuid.toString());
-                        insert.setLong(2, now);
-                        insert.setLong(3, 0L);
-                        insert.executeUpdate();
-                    }
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().severe("[Salary] Erreur lors du chargement du cooldown salaire de " + uuid + " : " + e.getMessage());
+            if (progress <= 0L) {
+                progressRepository.ensurePlayerRow(uuid, now);
+            }
+            return progress;
+        }).whenComplete((progress, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+            if (throwable != null) {
+                plugin.getLogger().severe("[Salary] Erreur lors du chargement du cooldown salaire de " + uuid + " : " + throwable.getMessage());
+                loadingPlayers.remove(uuid);
+                return;
             }
 
-            long finalProgress = progress;
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                setProgress(uuid, finalProgress);
-                loadingPlayers.remove(uuid);
-            });
-        });
+            setProgress(uuid, progress);
+            loadingPlayers.remove(uuid);
+        }));
     }
 
     public void fetchProgressAsync(UUID uuid, Consumer<Long> callback) {
+        if (!ready) {
+            Bukkit.getScheduler().runTask(plugin, () -> callback.accept(null));
+            return;
+        }
+
         if (isProgressLoaded(uuid)) {
             callback.accept(getProgress(uuid));
             return;
         }
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            long progress = 0L;
-            try (Connection con = databaseManager.getConnection();
-                 PreparedStatement stmt = con.prepareStatement("SELECT salary_progress FROM player_data WHERE uuid = ?")) {
-                stmt.setString(1, uuid.toString());
-                ResultSet rs = stmt.executeQuery();
-                if (rs.next()) {
-                    progress = Math.max(0L, rs.getLong("salary_progress"));
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().severe("[Salary] Erreur lors de la lecture du cooldown salaire de " + uuid + " : " + e.getMessage());
-            }
+        databaseManager.supplyAsync(() -> progressRepository.loadProgress(uuid))
+                .whenComplete((progress, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (throwable != null) {
+                        plugin.getLogger().severe("[Salary] Erreur lors de la lecture du cooldown salaire de " + uuid + " : " + throwable.getMessage());
+                        callback.accept(null);
+                        return;
+                    }
 
-            long finalProgress = progress;
-            Bukkit.getScheduler().runTask(plugin, () -> callback.accept(finalProgress));
-        });
+                    callback.accept(progress);
+                }));
     }
 
     public void savePlayerProgressAsync(UUID uuid) {
-        if (!isProgressLoaded(uuid)) return;
+        if (!ready || !isProgressLoaded(uuid)) {
+            return;
+        }
         saveProgressAsync(uuid, getProgress(uuid));
     }
 
     public void saveProgressAsync(UUID uuid, long progress) {
-        long safeProgress = Math.max(0L, progress);
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try (Connection con = databaseManager.getConnection()) {
-                boolean updated;
-                try (PreparedStatement update = con.prepareStatement("UPDATE player_data SET salary_progress = ? WHERE uuid = ?")) {
-                    update.setLong(1, safeProgress);
-                    update.setString(2, uuid.toString());
-                    updated = update.executeUpdate() > 0;
-                }
+        if (!ready) {
+            return;
+        }
 
-                if (!updated) {
-                    try (PreparedStatement insert = con.prepareStatement("INSERT INTO player_data (uuid, last_salary, salary_progress) VALUES (?, ?, ?)")) {
-                        insert.setString(1, uuid.toString());
-                        insert.setLong(2, System.currentTimeMillis());
-                        insert.setLong(3, safeProgress);
-                        insert.executeUpdate();
-                    }
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().severe("[Salary] Erreur lors de la sauvegarde du cooldown salaire de " + uuid + " : " + e.getMessage());
-            }
-        });
+        long safeProgress = Math.max(0L, progress);
+        databaseManager.runAsync(() -> progressRepository.saveProgress(uuid, safeProgress))
+                .exceptionally(throwable -> {
+                    plugin.getLogger().severe("[Salary] Erreur lors de la sauvegarde du cooldown salaire de " + uuid + " : " + throwable.getMessage());
+                    return null;
+                });
     }
 
     private void saveAllProgressSync() {
-        if (progressCache.isEmpty()) return;
-        try (Connection con = databaseManager.getConnection()) {
-            for (Map.Entry<UUID, Long> entry : progressCache.entrySet()) {
-                boolean updated;
-                try (PreparedStatement update = con.prepareStatement("UPDATE player_data SET salary_progress = ? WHERE uuid = ?")) {
-                    update.setLong(1, Math.max(0L, entry.getValue()));
-                    update.setString(2, entry.getKey().toString());
-                    updated = update.executeUpdate() > 0;
-                }
+        if (progressCache.isEmpty()) {
+            return;
+        }
 
-                if (!updated) {
-                    try (PreparedStatement insert = con.prepareStatement("INSERT INTO player_data (uuid, last_salary, salary_progress) VALUES (?, ?, ?)")) {
-                        insert.setString(1, entry.getKey().toString());
-                        insert.setLong(2, System.currentTimeMillis());
-                        insert.setLong(3, Math.max(0L, entry.getValue()));
-                        insert.executeUpdate();
-                    }
-                }
+        for (Map.Entry<UUID, Long> entry : progressCache.entrySet()) {
+            try {
+                progressRepository.saveProgress(entry.getKey(), entry.getValue());
+            } catch (SQLException exception) {
+                plugin.getLogger().severe("[Salary] Erreur lors de la sauvegarde finale des cooldowns : " + exception.getMessage());
             }
-        } catch (SQLException e) {
-            plugin.getLogger().severe("[Salary] Erreur lors de la sauvegarde finale des cooldowns : " + e.getMessage());
         }
     }
 }

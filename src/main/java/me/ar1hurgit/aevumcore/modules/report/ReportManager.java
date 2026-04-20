@@ -1,9 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.report;
 
 import me.ar1hurgit.aevumcore.AevumCore;
-import me.ar1hurgit.aevumcore.core.module.Module;
-import me.ar1hurgit.aevumcore.modules.nickname.NicknameManager;
-import me.ar1hurgit.aevumcore.modules.nickname.NicknameModule;
+import me.ar1hurgit.aevumcore.core.text.DurationFormatter;
 import me.ar1hurgit.aevumcore.modules.report.gui.ReportMenu;
 import me.ar1hurgit.aevumcore.storage.database.DatabaseManager;
 import org.bukkit.Bukkit;
@@ -15,17 +13,12 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.inventory.Inventory;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -42,6 +35,8 @@ public class ReportManager {
     private final AevumCore plugin;
     private final DatabaseManager databaseManager;
     private final ReportMenu menu = new ReportMenu();
+    private final ReportRepository repository;
+    private final ReportTargetResolver targetResolver;
 
     private final Map<Long, ReportRecord> openReports = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastReportAtByPlayer = new ConcurrentHashMap<>();
@@ -56,36 +51,35 @@ public class ReportManager {
     public ReportManager(AevumCore plugin, DatabaseManager databaseManager) {
         this.plugin = plugin;
         this.databaseManager = databaseManager;
+        this.repository = new ReportRepository(databaseManager, plugin.getLogger());
+        this.targetResolver = new ReportTargetResolver(plugin);
     }
 
     public void enable() {
         ready = false;
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            createTablesIfNeeded();
-            long cutoff = System.currentTimeMillis() - REPORT_LIFETIME_MS;
-            purgeExpiredReports(cutoff);
+        long cutoff = System.currentTimeMillis() - REPORT_LIFETIME_MS;
+        databaseManager.supplyAsync(() -> repository.loadBootstrapState(cutoff))
+                .whenComplete((bootstrapState, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!plugin.isEnabled() || throwable != null) {
+                        if (throwable != null) {
+                            plugin.getLogger().severe("[Report] Initialisation impossible : " + throwable.getMessage());
+                        }
+                        return;
+                    }
 
-            List<ReportRecord> loadedReports = loadOpenReports(cutoff);
-            Map<UUID, Long> loadedCooldowns = loadCooldowns();
-            long initialNextId = loadNextReportId();
+                    openReports.clear();
+                    for (ReportRecord record : bootstrapState.openReports()) {
+                        openReports.put(record.id(), record);
+                    }
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (!plugin.isEnabled()) return;
+                    lastReportAtByPlayer.clear();
+                    lastReportAtByPlayer.putAll(bootstrapState.cooldowns());
 
-                openReports.clear();
-                for (ReportRecord record : loadedReports) {
-                    openReports.put(record.id(), record);
-                }
-
-                lastReportAtByPlayer.clear();
-                lastReportAtByPlayer.putAll(loadedCooldowns);
-
-                nextReportId.set(initialNextId);
-                ready = true;
-                startCleanupTask();
-            });
-        });
+                    nextReportId.set(bootstrapState.nextReportId());
+                    ready = true;
+                    startCleanupTask();
+                }));
     }
 
     public void disable() {
@@ -155,40 +149,31 @@ public class ReportManager {
                 0L
         );
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            String failureMessage = null;
+        databaseManager.supplyAsync(() -> repository.storeNewReport(record))
+                .whenComplete((success, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    pendingSubmitters.remove(reporter.getUniqueId());
+                    if (!plugin.isEnabled()) return;
 
-            try (Connection con = databaseManager.getConnection()) {
-                insertReport(con, record);
-                updateCooldown(con, reporter.getUniqueId(), createdAt);
-            } catch (SQLException exception) {
-                failureMessage = exception.getMessage();
-                plugin.getLogger().severe("[Report] Impossible d'envoyer le report #" + reportId + " : " + exception.getMessage());
-            }
-
-            String finalFailureMessage = failureMessage;
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                pendingSubmitters.remove(reporter.getUniqueId());
-                if (!plugin.isEnabled()) return;
-
-                if (finalFailureMessage != null) {
-                    if (reporter.isOnline()) {
-                        reporter.sendMessage(prefix() + ChatColor.RED + " Impossible d'envoyer le report pour le moment.");
+                    if (throwable != null || !Boolean.TRUE.equals(success)) {
+                        if (throwable != null) {
+                            plugin.getLogger().severe("[Report] Echec creation report #" + record.id() + " : " + throwable.getMessage());
+                        }
+                        if (reporter.isOnline()) {
+                            reporter.sendMessage(prefix() + ChatColor.RED + " Impossible d'envoyer le report pour le moment.");
+                        }
+                        return;
                     }
-                    return;
-                }
 
-                openReports.put(record.id(), record);
-                lastReportAtByPlayer.put(reporter.getUniqueId(), createdAt);
+                    openReports.put(record.id(), record);
+                    lastReportAtByPlayer.put(reporter.getUniqueId(), createdAt);
 
-                if (reporter.isOnline()) {
-                    reporter.sendMessage(buildConfirmation(record));
-                }
+                    if (reporter.isOnline()) {
+                        reporter.sendMessage(buildConfirmation(record));
+                    }
 
-                notifyStaff(record);
-                refreshOpenMenus();
-            });
-        });
+                    notifyStaff(record);
+                    refreshOpenMenus();
+                }));
     }
 
     public void claimReport(Player staff, long reportId) {
@@ -215,44 +200,33 @@ public class ReportManager {
         }
 
         long claimAt = System.currentTimeMillis();
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            int updatedRows = 0;
-            try (Connection con = databaseManager.getConnection();
-                 PreparedStatement stmt = con.prepareStatement(buildClaimSql(override))) {
-                stmt.setString(1, staff.getUniqueId().toString());
-                stmt.setString(2, staff.getName());
-                stmt.setLong(3, claimAt);
-                stmt.setLong(4, reportId);
-                updatedRows = stmt.executeUpdate();
-            } catch (SQLException exception) {
-                plugin.getLogger().severe("[Report] Impossible de prendre en charge le report #" + reportId + " : " + exception.getMessage());
-            }
+        databaseManager.supplyAsync(() -> repository.claimReport(reportId, staff.getUniqueId(), staff.getName(), claimAt, override))
+                .whenComplete((updatedRows, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!plugin.isEnabled()) return;
 
-            int finalUpdatedRows = updatedRows;
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (!plugin.isEnabled()) return;
+                    if (throwable != null || updatedRows == null || updatedRows <= 0) {
+                        if (throwable != null) {
+                            plugin.getLogger().severe("[Report] Echec prise en charge report #" + reportId + " : " + throwable.getMessage());
+                        }
+                        if (staff.isOnline()) {
+                            staff.sendMessage(prefix() + ChatColor.RED + " Le report n'est plus disponible.");
+                        }
+                        refreshOpenMenus();
+                        return;
+                    }
 
-                if (finalUpdatedRows <= 0) {
+                    openReports.computeIfPresent(reportId, (id, record) -> record.withClaim(staff.getUniqueId(), staff.getName(), claimAt));
+
                     if (staff.isOnline()) {
-                        staff.sendMessage(prefix() + ChatColor.RED + " Le report n'est plus disponible.");
+                        if (current.isClaimed() && !current.isClaimedBy(staff.getUniqueId())) {
+                            staff.sendMessage(prefix() + ChatColor.GREEN + " Vous avez repris le report " + ChatColor.GOLD + "#" + reportId + ChatColor.GREEN + ".");
+                        } else {
+                            staff.sendMessage(prefix() + ChatColor.GREEN + " Vous avez pris en charge le report " + ChatColor.GOLD + "#" + reportId + ChatColor.GREEN + ".");
+                        }
                     }
+
                     refreshOpenMenus();
-                    return;
-                }
-
-                openReports.computeIfPresent(reportId, (id, record) -> record.withClaim(staff.getUniqueId(), staff.getName(), claimAt));
-
-                if (staff.isOnline()) {
-                    if (current.isClaimed() && !current.isClaimedBy(staff.getUniqueId())) {
-                        staff.sendMessage(prefix() + ChatColor.GREEN + " Vous avez repris le report " + ChatColor.GOLD + "#" + reportId + ChatColor.GREEN + ".");
-                    } else {
-                        staff.sendMessage(prefix() + ChatColor.GREEN + " Vous avez pris en charge le report " + ChatColor.GOLD + "#" + reportId + ChatColor.GREEN + ".");
-                    }
-                }
-
-                refreshOpenMenus();
-            });
-        });
+                }));
     }
 
     public void closeReport(CommandSender actor, long reportId) {
@@ -284,37 +258,23 @@ public class ReportManager {
         }
 
         long closedAt = System.currentTimeMillis();
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            int updatedRows = 0;
-            try (Connection con = databaseManager.getConnection();
-                 PreparedStatement stmt = con.prepareStatement(buildCloseSql(override))) {
-                stmt.setString(1, actorUuid == null ? null : actorUuid.toString());
-                stmt.setString(2, actorName);
-                stmt.setLong(3, closedAt);
-                stmt.setLong(4, reportId);
-                if (!override && actorUuid != null) {
-                    stmt.setString(5, actorUuid.toString());
-                }
-                updatedRows = stmt.executeUpdate();
-            } catch (SQLException exception) {
-                plugin.getLogger().severe("[Report] Impossible de fermer le report #" + reportId + " : " + exception.getMessage());
-            }
+        databaseManager.supplyAsync(() -> repository.closeReport(reportId, actorUuid, actorName, closedAt, override))
+                .whenComplete((updatedRows, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!plugin.isEnabled()) return;
 
-            int finalUpdatedRows = updatedRows;
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (!plugin.isEnabled()) return;
+                    if (throwable != null || updatedRows == null || updatedRows <= 0) {
+                        if (throwable != null) {
+                            plugin.getLogger().severe("[Report] Echec fermeture report #" + reportId + " : " + throwable.getMessage());
+                        }
+                        actor.sendMessage(prefix() + ChatColor.RED + " Le report n'est plus disponible.");
+                        refreshOpenMenus();
+                        return;
+                    }
 
-                if (finalUpdatedRows <= 0) {
-                    actor.sendMessage(prefix() + ChatColor.RED + " Le report n'est plus disponible.");
+                    openReports.remove(reportId);
+                    actor.sendMessage(prefix() + ChatColor.GREEN + " Le report " + ChatColor.GOLD + "#" + reportId + ChatColor.GREEN + " a ete ferme.");
                     refreshOpenMenus();
-                    return;
-                }
-
-                openReports.remove(reportId);
-                actor.sendMessage(prefix() + ChatColor.GREEN + " Le report " + ChatColor.GOLD + "#" + reportId + ChatColor.GREEN + " a ete ferme.");
-                refreshOpenMenus();
-            });
-        });
+                }));
     }
 
     public void openMenu(Player viewer, int requestedPage) {
@@ -371,71 +331,28 @@ public class ReportManager {
         if (!isReady()) return;
 
         long cutoff = System.currentTimeMillis() - REPORT_LIFETIME_MS;
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            boolean sqlSuccess = purgeExpiredReports(cutoff);
+        databaseManager.supplyAsync(() -> repository.purgeExpiredReports(cutoff))
+                .whenComplete((sqlSuccess, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!plugin.isEnabled() || throwable != null || !Boolean.TRUE.equals(sqlSuccess)) {
+                        if (throwable != null) {
+                            plugin.getLogger().severe("[Report] Echec purge reports expires : " + throwable.getMessage());
+                        }
+                        return;
+                    }
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (!plugin.isEnabled() || !sqlSuccess) return;
-
-                boolean removed = openReports.entrySet().removeIf(entry -> entry.getValue().createdAt() < cutoff);
-                if (removed) {
-                    refreshOpenMenus();
-                }
-            });
-        });
+                    boolean removed = openReports.entrySet().removeIf(entry -> entry.getValue().createdAt() < cutoff);
+                    if (removed) {
+                        refreshOpenMenus();
+                    }
+                }));
     }
 
     public ResolvedTarget resolveTarget(Player reporter, String input) {
-        if (input == null || input.isBlank()) {
-            return null;
-        }
-
-        NicknameManager nicknameManager = getNicknameManager();
-        if (nicknameManager != null) {
-            Player resolved = nicknameManager.resolveTargetForViewer(reporter, input);
-            if (resolved != null) {
-                return new ResolvedTarget(resolved.getUniqueId(), resolved.getName());
-            }
-        }
-
-        Player online = Bukkit.getPlayerExact(input);
-        if (online == null) {
-            online = Bukkit.getPlayer(input);
-        }
-        if (online != null) {
-            return new ResolvedTarget(online.getUniqueId(), online.getName());
-        }
-
-        OfflinePlayer offline = Bukkit.getOfflinePlayer(input);
-        if (!offline.isOnline() && !offline.hasPlayedBefore()) {
-            return null;
-        }
-
-        String resolvedName = offline.getName() == null || offline.getName().isBlank() ? input : offline.getName();
-        return new ResolvedTarget(offline.getUniqueId(), resolvedName);
+        return targetResolver.resolveTarget(reporter, input);
     }
 
     public List<String> getTargetSuggestions(Player viewer, String token) {
-        String loweredToken = token == null ? "" : token.toLowerCase(Locale.ROOT);
-        TreeSet<String> suggestions = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        NicknameManager nicknameManager = getNicknameManager();
-
-        for (Player online : Bukkit.getOnlinePlayers()) {
-            if (!viewer.equals(online) && !viewer.canSee(online)) continue;
-
-            suggestions.add(online.getName());
-            if (nicknameManager != null) {
-                suggestions.add(nicknameManager.getDisplayedName(online));
-            }
-        }
-
-        List<String> filtered = new ArrayList<>();
-        for (String suggestion : suggestions) {
-            if (suggestion.toLowerCase(Locale.ROOT).startsWith(loweredToken)) {
-                filtered.add(suggestion);
-            }
-        }
-        return filtered;
+        return targetResolver.getTargetSuggestions(viewer, token);
     }
 
     public List<String> getOpenReportIdSuggestions(String token) {
@@ -522,200 +439,12 @@ public class ReportManager {
         return color(parsed);
     }
 
-    private void insertReport(Connection con, ReportRecord record) throws SQLException {
-        try (PreparedStatement stmt = con.prepareStatement(
-                "INSERT INTO reports (" +
-                        "id, reporter_uuid, reporter_name, target_uuid, target_name, reason, created_at, " +
-                        "claimed_by_uuid, claimed_by_name, claimed_at, closed_by_uuid, closed_by_name, closed_at" +
-                        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )) {
-            stmt.setLong(1, record.id());
-            stmt.setString(2, record.reporterUuid().toString());
-            stmt.setString(3, record.reporterName());
-            stmt.setString(4, record.targetUuid() == null ? null : record.targetUuid().toString());
-            stmt.setString(5, record.targetName());
-            stmt.setString(6, record.reason());
-            stmt.setLong(7, record.createdAt());
-            stmt.setString(8, null);
-            stmt.setString(9, null);
-            stmt.setLong(10, 0L);
-            stmt.setString(11, null);
-            stmt.setString(12, null);
-            stmt.setLong(13, 0L);
-            stmt.executeUpdate();
-        }
-    }
-
-    private void updateCooldown(Connection con, UUID reporterUuid, long lastReportAt) throws SQLException {
-        boolean updated;
-        try (PreparedStatement stmt = con.prepareStatement(
-                "UPDATE report_cooldowns SET last_report_at = ? WHERE reporter_uuid = ?"
-        )) {
-            stmt.setLong(1, lastReportAt);
-            stmt.setString(2, reporterUuid.toString());
-            updated = stmt.executeUpdate() > 0;
-        }
-
-        if (!updated) {
-            try (PreparedStatement stmt = con.prepareStatement(
-                    "INSERT INTO report_cooldowns (reporter_uuid, last_report_at) VALUES (?, ?)"
-            )) {
-                stmt.setString(1, reporterUuid.toString());
-                stmt.setLong(2, lastReportAt);
-                stmt.executeUpdate();
-            }
-        }
-    }
-
-    private void createTablesIfNeeded() {
-        try (Connection con = databaseManager.getConnection();
-             PreparedStatement reportsStmt = con.prepareStatement(
-                     "CREATE TABLE IF NOT EXISTS reports (" +
-                             "id BIGINT PRIMARY KEY," +
-                             "reporter_uuid VARCHAR(36) NOT NULL," +
-                             "reporter_name VARCHAR(64) NOT NULL," +
-                             "target_uuid VARCHAR(36)," +
-                             "target_name VARCHAR(64) NOT NULL," +
-                             "reason TEXT NOT NULL," +
-                             "created_at BIGINT NOT NULL," +
-                             "claimed_by_uuid VARCHAR(36)," +
-                             "claimed_by_name VARCHAR(64)," +
-                             "claimed_at BIGINT NOT NULL DEFAULT 0," +
-                             "closed_by_uuid VARCHAR(36)," +
-                             "closed_by_name VARCHAR(64)," +
-                             "closed_at BIGINT NOT NULL DEFAULT 0" +
-                             ")"
-             );
-             PreparedStatement cooldownStmt = con.prepareStatement(
-                     "CREATE TABLE IF NOT EXISTS report_cooldowns (" +
-                             "reporter_uuid VARCHAR(36) PRIMARY KEY," +
-                             "last_report_at BIGINT NOT NULL" +
-                             ")"
-             )) {
-            reportsStmt.executeUpdate();
-            cooldownStmt.executeUpdate();
-        } catch (SQLException exception) {
-            plugin.getLogger().severe("[Report] Impossible de creer les tables SQL : " + exception.getMessage());
-        }
-    }
-
-    private boolean purgeExpiredReports(long cutoff) {
-        try (Connection con = databaseManager.getConnection();
-             PreparedStatement stmt = con.prepareStatement("DELETE FROM reports WHERE created_at < ?")) {
-            stmt.setLong(1, cutoff);
-            stmt.executeUpdate();
-            return true;
-        } catch (SQLException exception) {
-            plugin.getLogger().severe("[Report] Impossible de purger les reports expires : " + exception.getMessage());
-            return false;
-        }
-    }
-
-    private List<ReportRecord> loadOpenReports(long cutoff) {
-        List<ReportRecord> reports = new ArrayList<>();
-
-        try (Connection con = databaseManager.getConnection();
-             PreparedStatement stmt = con.prepareStatement(
-                     "SELECT id, reporter_uuid, reporter_name, target_uuid, target_name, reason, created_at, claimed_by_uuid, claimed_by_name, claimed_at " +
-                             "FROM reports WHERE closed_at = 0 AND created_at >= ?"
-             )) {
-            stmt.setLong(1, cutoff);
-            ResultSet rs = stmt.executeQuery();
-
-            while (rs.next()) {
-                UUID reporterUuid = parseUuid(rs.getString("reporter_uuid"));
-                if (reporterUuid == null) continue;
-
-                reports.add(new ReportRecord(
-                        rs.getLong("id"),
-                        reporterUuid,
-                        rs.getString("reporter_name"),
-                        parseUuid(rs.getString("target_uuid")),
-                        rs.getString("target_name"),
-                        rs.getString("reason"),
-                        rs.getLong("created_at"),
-                        parseUuid(rs.getString("claimed_by_uuid")),
-                        rs.getString("claimed_by_name"),
-                        rs.getLong("claimed_at")
-                ));
-            }
-        } catch (SQLException exception) {
-            plugin.getLogger().severe("[Report] Impossible de charger les reports actifs : " + exception.getMessage());
-        }
-
-        return reports;
-    }
-
-    private Map<UUID, Long> loadCooldowns() {
-        Map<UUID, Long> cooldowns = new ConcurrentHashMap<>();
-
-        try (Connection con = databaseManager.getConnection();
-             PreparedStatement stmt = con.prepareStatement("SELECT reporter_uuid, last_report_at FROM report_cooldowns")) {
-            ResultSet rs = stmt.executeQuery();
-
-            while (rs.next()) {
-                UUID uuid = parseUuid(rs.getString("reporter_uuid"));
-                if (uuid == null) continue;
-                cooldowns.put(uuid, rs.getLong("last_report_at"));
-            }
-        } catch (SQLException exception) {
-            plugin.getLogger().severe("[Report] Impossible de charger les cooldowns de reports : " + exception.getMessage());
-        }
-
-        return cooldowns;
-    }
-
-    private long loadNextReportId() {
-        try (Connection con = databaseManager.getConnection();
-             PreparedStatement stmt = con.prepareStatement("SELECT MAX(id) AS max_id FROM reports")) {
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                return rs.getLong("max_id") + 1L;
-            }
-        } catch (SQLException exception) {
-            plugin.getLogger().severe("[Report] Impossible de calculer le prochain identifiant de report : " + exception.getMessage());
-        }
-
-        return 1L;
-    }
-
-    private String buildClaimSql(boolean override) {
-        if (override) {
-            return "UPDATE reports SET claimed_by_uuid = ?, claimed_by_name = ?, claimed_at = ? WHERE id = ? AND closed_at = 0";
-        }
-        return "UPDATE reports SET claimed_by_uuid = ?, claimed_by_name = ?, claimed_at = ? WHERE id = ? AND closed_at = 0 AND claimed_by_uuid IS NULL";
-    }
-
-    private String buildCloseSql(boolean override) {
-        if (override) {
-            return "UPDATE reports SET closed_by_uuid = ?, closed_by_name = ?, closed_at = ? WHERE id = ? AND closed_at = 0";
-        }
-        return "UPDATE reports SET closed_by_uuid = ?, closed_by_name = ?, closed_at = ? WHERE id = ? AND closed_at = 0 AND claimed_by_uuid = ?";
-    }
-
     private long getRemainingCooldownMillis(UUID uuid, long now, long cooldownSeconds) {
-        if (cooldownSeconds <= 0L) return 0L;
-
-        long lastReportAt = lastReportAtByPlayer.getOrDefault(uuid, 0L);
-        long expiresAt = lastReportAt + (cooldownSeconds * 1000L);
-        return Math.max(0L, expiresAt - now);
-    }
-
-    private NicknameManager getNicknameManager() {
-        Module module = plugin.getModuleManager().get("nickname");
-        if (!(module instanceof NicknameModule nicknameModule) || !module.isEnabled()) {
-            return null;
-        }
-        return nicknameModule.getManager();
-    }
-
-    private UUID parseUuid(String raw) {
-        if (raw == null || raw.isBlank()) return null;
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException exception) {
-            return null;
-        }
+        return ReportCooldownPolicy.getRemainingCooldownMillis(
+                lastReportAtByPlayer.getOrDefault(uuid, 0L),
+                now,
+                cooldownSeconds
+        );
     }
 
     private String sanitizeReason(String rawReason) {
@@ -734,16 +463,7 @@ public class ReportManager {
     }
 
     private String formatDuration(long millis) {
-        long totalSeconds = Math.max(0L, millis / 1000L);
-        long days = totalSeconds / 86400L;
-        long hours = (totalSeconds % 86400L) / 3600L;
-        long minutes = (totalSeconds % 3600L) / 60L;
-        long seconds = totalSeconds % 60L;
-
-        if (days > 0) return days + "j " + hours + "h";
-        if (hours > 0) return hours + "h " + minutes + "m";
-        if (minutes > 0) return minutes + "m " + seconds + "s";
-        return seconds + "s";
+        return DurationFormatter.formatCompact(millis);
     }
 
     private String color(String input) {

@@ -15,6 +15,7 @@ import me.ar1hurgit.aevumcore.AevumCore;
 import me.ar1hurgit.aevumcore.core.module.Module;
 import me.ar1hurgit.aevumcore.modules.nickname.NicknameManager;
 import me.ar1hurgit.aevumcore.modules.nickname.NicknameModule;
+import me.ar1hurgit.aevumcore.storage.database.DatabaseManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
@@ -22,9 +23,6 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
@@ -32,8 +30,6 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 
-import java.io.File;
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,22 +51,23 @@ public class VanishManager {
     private static final long SOUND_ACTIVITY_WINDOW_MS = 1800L;
 
     private final AevumCore plugin;
+    private final DatabaseManager databaseManager;
     private final Set<UUID> vanishedPlayers = ConcurrentHashMap.newKeySet();
     private final Map<UUID, String> knownNames = new ConcurrentHashMap<>();
     private final Map<UUID, GameMode> guiModeBackup = new ConcurrentHashMap<>();
     private final Map<UUID, Map<Integer, UUID>> menuTargets = new ConcurrentHashMap<>();
     private final Set<UUID> skipSpectatorNextOpen = ConcurrentHashMap.newKeySet();
     private final Map<UUID, SoundMarker> recentSoundMarkers = new ConcurrentHashMap<>();
-
-    private File dataFile;
-    private FileConfiguration dataConfig;
+    private final VanishDataStore dataStore;
 
     private ProtocolManager protocolManager;
     private final List<PacketAdapter> protocolListeners = new ArrayList<>();
     private PacketType playerInfoRemovePacketType;
 
-    public VanishManager(AevumCore plugin) {
+    public VanishManager(AevumCore plugin, DatabaseManager databaseManager) {
         this.plugin = plugin;
+        this.databaseManager = databaseManager;
+        this.dataStore = new VanishDataStore(plugin, databaseManager);
     }
 
     public void enable() {
@@ -102,7 +99,7 @@ public class VanishManager {
         }
         protocolListeners.clear();
 
-        saveData();
+        saveDataSync();
         guiModeBackup.clear();
         menuTargets.clear();
         skipSpectatorNextOpen.clear();
@@ -475,7 +472,8 @@ public class VanishManager {
             if (value instanceof PacketType packetType) {
                 return packetType;
             }
-        } catch (NoSuchFieldException | IllegalAccessException ignored) {
+        } catch (NoSuchFieldException | IllegalAccessException exception) {
+            logProtocolIssue("resolution du packet " + fieldName, exception);
         }
         return null;
     }
@@ -490,7 +488,8 @@ public class VanishManager {
             List<PlayerInfoData> raw;
             try {
                 raw = dataLists.read(i);
-            } catch (Exception ignored) {
+            } catch (RuntimeException exception) {
+                logProtocolIssue("lecture des donnees tablist index " + i, exception);
                 continue;
             }
 
@@ -505,7 +504,8 @@ public class VanishManager {
             if (filtered.size() != raw.size()) {
                 try {
                     dataLists.write(i, filtered);
-                } catch (Exception ignored) {
+                } catch (RuntimeException exception) {
+                    logProtocolIssue("ecriture des donnees tablist index " + i, exception);
                 }
             }
         }
@@ -542,7 +542,8 @@ public class VanishManager {
                 return null;
             }
             entityId = event.getPacket().getIntegers().read(0);
-        } catch (Exception ignored) {
+        } catch (RuntimeException exception) {
+            logProtocolIssue("lecture de l'entite source du packet son", exception);
             return null;
         }
 
@@ -567,7 +568,8 @@ public class VanishManager {
                 double z = event.getPacket().getDoubles().read(2);
                 return new Location(viewer.getWorld(), x, y, z);
             }
-        } catch (Exception ignored) {
+        } catch (RuntimeException exception) {
+            logProtocolIssue("lecture des coordonnees doubles du packet son", exception);
         }
 
         try {
@@ -577,7 +579,8 @@ public class VanishManager {
                 double z = event.getPacket().getIntegers().read(2) / 8.0D;
                 return new Location(viewer.getWorld(), x, y, z);
             }
-        } catch (Exception ignored) {
+        } catch (RuntimeException exception) {
+            logProtocolIssue("lecture des coordonnees entieres du packet son", exception);
         }
 
         return null;
@@ -604,7 +607,8 @@ public class VanishManager {
             Suggestions suggestions;
             try {
                 suggestions = suggestionsModifier.read(i);
-            } catch (Exception ignored) {
+            } catch (RuntimeException exception) {
+                logProtocolIssue("lecture des suggestions de commande index " + i, exception);
                 continue;
             }
 
@@ -618,7 +622,8 @@ public class VanishManager {
             if (filtered.size() != suggestions.getList().size()) {
                 try {
                     suggestionsModifier.write(i, new Suggestions(suggestions.getRange(), filtered));
-                } catch (Exception ignored) {
+                } catch (RuntimeException exception) {
+                    logProtocolIssue("ecriture des suggestions de commande index " + i, exception);
                 }
             }
         }
@@ -632,7 +637,8 @@ public class VanishManager {
             PacketContainer packet = protocolManager.createPacket(playerInfoRemovePacketType);
             packet.getUUIDLists().write(0, Collections.singletonList(target.getUniqueId()));
             protocolManager.sendServerPacket(viewer, packet);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException exception) {
+            logProtocolIssue("envoi de retrait tablist pour " + target.getName(), exception);
         }
     }
 
@@ -657,57 +663,27 @@ public class VanishManager {
     }
 
     private void loadData() {
-        if (!plugin.getDataFolder().exists()) {
-            plugin.getDataFolder().mkdirs();
-        }
-
-        dataFile = new File(plugin.getDataFolder(), "vanish.yml");
-        if (!dataFile.exists()) {
-            try {
-                dataFile.createNewFile();
-            } catch (IOException e) {
-                plugin.getLogger().severe("[Vanish] Impossible de creer vanish.yml: " + e.getMessage());
-            }
-        }
-
-        dataConfig = YamlConfiguration.loadConfiguration(dataFile);
-
+        VanishDataStore.StoredState storedState = dataStore.load();
         vanishedPlayers.clear();
-        for (String raw : dataConfig.getStringList("vanished")) {
-            try {
-                vanishedPlayers.add(UUID.fromString(raw));
-            } catch (IllegalArgumentException ignored) {
-            }
-        }
-
+        vanishedPlayers.addAll(storedState.vanishedPlayers());
         knownNames.clear();
-        ConfigurationSection names = dataConfig.getConfigurationSection("names");
-        if (names != null) {
-            for (String key : names.getKeys(false)) {
-                try {
-                    knownNames.put(UUID.fromString(key), names.getString(key, key));
-                } catch (IllegalArgumentException ignored) {
-                }
-            }
-        }
+        knownNames.putAll(storedState.knownNames());
     }
 
     private void saveData() {
-        if (dataConfig == null || dataFile == null) return;
+        databaseManager.runAsync(() -> dataStore.save(vanishedPlayers, knownNames))
+                .exceptionally(throwable -> {
+                    plugin.getLogger().severe("[Vanish] Echec sauvegarde SQL : " + throwable.getMessage());
+                    return null;
+                });
+    }
 
-        List<String> vanished = vanishedPlayers.stream().map(UUID::toString).sorted().toList();
-        dataConfig.set("vanished", vanished);
+    private void saveDataSync() {
+        dataStore.save(vanishedPlayers, knownNames);
+    }
 
-        dataConfig.set("names", null);
-        for (Map.Entry<UUID, String> entry : knownNames.entrySet()) {
-            dataConfig.set("names." + entry.getKey(), entry.getValue());
-        }
-
-        try {
-            dataConfig.save(dataFile);
-        } catch (IOException e) {
-            plugin.getLogger().severe("[Vanish] Impossible de sauvegarder vanish.yml: " + e.getMessage());
-        }
+    private void logProtocolIssue(String action, Exception exception) {
+        plugin.getLogger().fine("[Vanish] Echec ProtocolLib lors de " + action + " : " + exception.getMessage());
     }
 
     private record SoundMarker(Location location, long timestamp) {

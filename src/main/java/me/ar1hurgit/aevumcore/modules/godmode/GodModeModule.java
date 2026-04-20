@@ -1,6 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.godmode;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.core.command.CommandBindings;
 import me.ar1hurgit.aevumcore.core.module.AbstractModule;
 import org.bukkit.Bukkit;
 
@@ -25,11 +26,8 @@ public class GodModeModule extends AbstractModule {
         manager = new GodModeManager(plugin);
         plugin.getServer().getPluginManager().registerEvents(new GodModeListener(manager), plugin);
 
-        if (plugin.getCommand("godmode") != null) {
-            GodModeCommand command = new GodModeCommand(plugin, manager);
-            plugin.getCommand("godmode").setExecutor(command);
-            plugin.getCommand("godmode").setTabCompleter(command);
-        }
+        GodModeCommand command = new GodModeCommand(plugin, manager);
+        CommandBindings.bind(plugin, "godmode", command, command);
 
         Bukkit.getLogger().info(plugin.getConfig().getString("prefix", "[AevumCore]") + " GodMode module enabled");
     }

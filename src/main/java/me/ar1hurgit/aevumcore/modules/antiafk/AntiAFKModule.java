@@ -1,6 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.antiafk;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.core.command.CommandBindings;
 import me.ar1hurgit.aevumcore.core.module.AbstractModule;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -32,11 +33,8 @@ public class AntiAFKModule extends AbstractModule {
     protected void onEnable() {
         if (!plugin.getConfig().getBoolean("antiafk.enabled", true)) return;
 
-        if (plugin.getCommand("antiafk") != null) {
-            AntiAFKCommand command = new AntiAFKCommand(plugin, this);
-            plugin.getCommand("antiafk").setExecutor(command);
-            plugin.getCommand("antiafk").setTabCompleter(command);
-        }
+        AntiAFKCommand command = new AntiAFKCommand(plugin, this);
+        CommandBindings.bind(plugin, "antiafk", command, command);
 
         plugin.getServer().getPluginManager().registerEvents(new AntiAFKListener(plugin, this), plugin);
         task = new AntiAFKTask(plugin, this).runTaskTimer(plugin, 20L, 20L);

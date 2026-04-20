@@ -1,7 +1,8 @@
 package me.ar1hurgit.aevumcore.modules.dice;
 
 import me.ar1hurgit.aevumcore.core.tab.BaseTabCompleter;
-import org.bukkit.command.*;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 
 import java.util.List;
 

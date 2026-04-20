@@ -4,8 +4,6 @@ import me.ar1hurgit.aevumcore.AevumCore;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
-import org.bukkit.Registry;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -32,6 +30,7 @@ public class SalaryTask extends BukkitRunnable {
     @Override
     public void run() {
         if (!plugin.getConfig().getBoolean("salary.enabled", true)) return;
+        if (!module.isReady()) return;
 
         long now = System.currentTimeMillis();
         long intervalMillis = module.getIntervalMillis();
@@ -111,7 +110,7 @@ public class SalaryTask extends BukkitRunnable {
             module.getEconomy().depositPlayer(player, amount);
         } else {
             String configuredItem = plugin.getConfig().getString("salary.starting-money-item", "EMERALD");
-            Material material = resolveRewardMaterial(configuredItem);
+            Material material = SalaryRewardResolver.resolveMaterial(configuredItem);
             if (material != null) {
                 giveMaterial(player, material, amount);
             } else if (!tryGiveNamespacedByCommand(player, configuredItem, amount)) {
@@ -126,39 +125,6 @@ public class SalaryTask extends BukkitRunnable {
         } else {
             player.sendMessage(prefix + ChatColor.GREEN + " Vous avez recu votre salaire de " + ChatColor.GOLD + amount + ChatColor.GREEN + " !");
         }
-    }
-
-    private Material resolveRewardMaterial(String configured) {
-        if (configured == null || configured.isBlank()) {
-            return Material.EMERALD;
-        }
-
-        String trimmed = configured.trim();
-
-        NamespacedKey key = NamespacedKey.fromString(trimmed.toLowerCase(Locale.ROOT));
-        if (key != null) {
-            Material byRegistry = Registry.MATERIAL.get(key);
-            if (byRegistry != null) {
-                return byRegistry;
-            }
-        }
-
-        Material byMatch = Material.matchMaterial(trimmed);
-        if (byMatch != null) {
-            return byMatch;
-        }
-
-        if (trimmed.contains(":")) {
-            String[] split = trimmed.split(":", 2);
-            if (split.length == 2 && !split[1].isBlank()) {
-                Material fromPath = Material.matchMaterial(split[1]);
-                if (fromPath != null) {
-                    return fromPath;
-                }
-            }
-        }
-
-        return null;
     }
 
     private void giveMaterial(Player player, Material material, int amount) {

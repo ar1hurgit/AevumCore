@@ -21,12 +21,14 @@ public class SalaryListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         if (!plugin.getConfig().getBoolean("salary.enabled", true)) return;
+        if (!module.isReady()) return;
         module.loadPlayerProgress(event.getPlayer().getUniqueId());
     }
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         if (!plugin.getConfig().getBoolean("salary.enabled", true)) return;
+        if (!module.isReady()) return;
 
         UUID uuid = event.getPlayer().getUniqueId();
         module.savePlayerProgressAsync(uuid);

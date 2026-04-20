@@ -1,6 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.nickname;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.core.command.CommandBindings;
 import me.ar1hurgit.aevumcore.core.module.AbstractModule;
 import me.ar1hurgit.aevumcore.storage.database.DatabaseManager;
 import org.bukkit.Bukkit;
@@ -31,14 +32,8 @@ public class NicknameModule extends AbstractModule {
         plugin.getServer().getPluginManager().registerEvents(new NicknameListener(manager), plugin);
 
         NicknameCommand command = new NicknameCommand(plugin, manager);
-        if (plugin.getCommand("nom") != null) {
-            plugin.getCommand("nom").setExecutor(command);
-            plugin.getCommand("nom").setTabCompleter(command);
-        }
-        if (plugin.getCommand("realname") != null) {
-            plugin.getCommand("realname").setExecutor(command);
-            plugin.getCommand("realname").setTabCompleter(command);
-        }
+        CommandBindings.bind(plugin, "nom", command, command);
+        CommandBindings.bind(plugin, "realname", command, command);
 
         Bukkit.getLogger().info(plugin.getConfig().getString("prefix", "[AevumCore]") + " Nickname module enabled");
     }

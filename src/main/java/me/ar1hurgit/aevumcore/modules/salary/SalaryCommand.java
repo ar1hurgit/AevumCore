@@ -1,6 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.salary;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.core.text.DurationFormatter;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -26,6 +27,10 @@ public class SalaryCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String prefix = ChatColor.translateAlternateColorCodes('&', plugin.getConfig().getString("prefix", "&f[&bAevumCore&f]"));
+        if (!module.isReady()) {
+            sender.sendMessage(prefix + ChatColor.RED + " Le module salary se charge encore.");
+            return true;
+        }
 
         if (args.length > 0 && sender.hasPermission("aevumcore.admin.salary")) {
             if (args[0].equalsIgnoreCase("add") || args[0].equalsIgnoreCase("set")) {
@@ -117,6 +122,11 @@ public class SalaryCommand implements CommandExecutor, TabCompleter {
         long intervalMillis = module.getIntervalMillis();
 
         module.fetchProgressAsync(player.getUniqueId(), progress -> {
+            if (progress == null) {
+                player.sendMessage(prefix + ChatColor.RED + " Impossible de lire votre progression salaire.");
+                return;
+            }
+
             long remaining = Math.max(0L, intervalMillis - progress);
             boolean afk = module.isPlayerAfk(player);
 
@@ -134,12 +144,7 @@ public class SalaryCommand implements CommandExecutor, TabCompleter {
     }
 
     private String formatDuration(long millis) {
-        long seconds = millis / 1000;
-        long minutes = seconds / 60;
-        long hours = minutes / 60;
-        if (hours > 0) return hours + "h " + (minutes % 60) + "min";
-        if (minutes > 0) return minutes + "min " + (seconds % 60) + "s";
-        return seconds + "s";
+        return DurationFormatter.formatCompact(millis);
     }
 
     @Override

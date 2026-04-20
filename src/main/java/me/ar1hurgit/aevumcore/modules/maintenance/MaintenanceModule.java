@@ -1,6 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.maintenance;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.core.command.CommandBindings;
 import me.ar1hurgit.aevumcore.core.module.AbstractModule;
 import org.bukkit.Bukkit;
 
@@ -25,7 +26,7 @@ public class MaintenanceModule extends AbstractModule {
         // Load maintenance state from config so it persists
         this.maintenanceActive = plugin.getConfig().getBoolean("maintenance.active-state", false);
 
-        plugin.getCommand("maintenance").setExecutor(new MaintenanceCommand(plugin, this));
+        CommandBindings.bind(plugin, "maintenance", new MaintenanceCommand(plugin, this));
         plugin.getServer().getPluginManager().registerEvents(new MaintenanceListener(plugin, this), plugin);
         
         Bukkit.getLogger().info(plugin.getConfig().getString("prefix", "[AevumCore]") + " Maintenance module enabled");

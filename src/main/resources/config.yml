@@ -1,8 +1,8 @@
 prefix: "[AevumCore]"
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-#  Base de donnÃ©es
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
+#  Base de données
+# ─────────────────────────────────────
 database:
   type: "SQLITE"   # SQLITE ou MYSQL
   sqlite:
@@ -15,75 +15,75 @@ database:
     password: ""
     pool-size: 5
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-#  DÃ© (/ des)
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
+#  Dé (/ des)
+# ─────────────────────────────────────
 dice:
   enabled: true
   radius: 15
   cooldown: 5
-  message-self: "&aðŸŽ² RÃ©sultat : {result}/100"
-  message-others: "&eðŸŽ² {player} a lancer des dÃ©s et a obtenu : {result}/100"
+  message-self: "&a🎲 Résultat : {result}/100"
+  message-others: "&e🎲 {player} a lancer des dés et a obtenu : {result}/100"
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
 #  Premier Join
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
 firstjoin:
   enabled: true
 
   reward-type: ITEM # ITEM ou VAULT
-  # Montant d'argent donnÃ© au premier join
+  # Montant d'argent donné au premier join
   starting-money: 100
-  # Type d'item utilisÃ© comme argent si c'est de l'argent non physique
+  # Type d'item utilisé comme argent si c'est de l'argent non physique
   starting-money-item: "EMERALD"
 
   global-message: true
-  # %player% sera remplacÃ© par le pseudo du joueur. Supporte les codes couleur &
-  welcome-message: "&6âœ¦ Bienvenue &e%player% &6sur le serveur !"
+  # %player% sera remplacé par le pseudo du joueur. Supporte les codes couleur &
+  welcome-message: "&6✦ Bienvenue &e%player% &6sur le serveur !"
 
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
 #  Maintenance (/maintenance)
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
 maintenance:
   enabled: true
-  # Ã‰tat persistant de la maintenance (modifiÃ© automatiquement par /maintenance)
+  # État persistant de la maintenance (modifié automatiquement par /maintenance)
   active-state: false
-  # Message affichÃ© au joueur refusÃ©. Supporte les codes couleur &
-  message: "&câš™ Le serveur est actuellement en maintenance.\n&7Revenez plus tard !"
-  # Groupes autorisÃ©s Ã  se connecter pendant la maintenance (vÃ©rifiÃ© via permission group.<nom>)
+  # Message affiché au joueur refusé. Supporte les codes couleur &
+  message: "&c⚙ Le serveur est actuellement en maintenance.\n&7Revenez plus tard !"
+  # Groupes autorisés à se connecter pendant la maintenance (vérifié via permission group.<nom>)
   allowed-groups:
     - "admin"
     - "staff"
     - "moderateur"
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-#  DerniÃ¨re Connexion (/lastconnexion)
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
+#  Dernière Connexion (/lastconnexion)
+# ─────────────────────────────────────
 lastconnection:
   enabled: true
   # Afficher le temps de jeu total dans la fiche du joueur
   show-playtime: true
-  # Nombre de sessions affichÃ©es dans l'historique
+  # Nombre de sessions affichées dans l'historique
   history-size: 10
   # Format de date Java (SimpleDateFormat)
   date-format: "dd/MM/yyyy HH:mm"
-  # DurÃ©e du cache en secondes pour Ã©viter trop de requÃªtes BDD
+  # Durée du cache en secondes pour éviter trop de requêtes BDD
   cache-duration: 60
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
 #  Salaire (/salary)
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────
 salary:
   enabled: true
-  # FrÃ©quence de versement en minutes
+  # Fréquence de versement en minutes
   interval: 60
-  # Si activÃ© : accumulation des salaires hors-ligne
+  # Si activé : accumulation des salaires hors-ligne
   pay-offline: false
-  # Type de rÃ©compense : ITEM ou VAULT
+  # Type de récompense : ITEM ou VAULT
   reward-type: ITEM
-  # Item utilise si reward-type=ITEM (accepte aussi namespace:item, ex: aevumguild:bronze_coin)
+  # Item utilisé si reward-type=ITEM
   starting-money-item: "EMERALD"
 # Anti-AFK
 antiafk:

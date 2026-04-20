@@ -1,6 +1,7 @@
 package me.ar1hurgit.aevumcore.modules.report;
 
 import me.ar1hurgit.aevumcore.AevumCore;
+import me.ar1hurgit.aevumcore.core.command.CommandBindings;
 import me.ar1hurgit.aevumcore.core.module.AbstractModule;
 import me.ar1hurgit.aevumcore.storage.database.DatabaseManager;
 import org.bukkit.Bukkit;
@@ -29,16 +30,10 @@ public class ReportModule extends AbstractModule {
         manager.enable();
 
         ReportCommand reportCommand = new ReportCommand(plugin, manager);
-        if (plugin.getCommand("report") != null) {
-            plugin.getCommand("report").setExecutor(reportCommand);
-            plugin.getCommand("report").setTabCompleter(reportCommand);
-        }
+        CommandBindings.bind(plugin, "report", reportCommand, reportCommand);
 
-        if (plugin.getCommand("reports") != null) {
-            ReportsCommand reportsCommand = new ReportsCommand(plugin, manager);
-            plugin.getCommand("reports").setExecutor(reportsCommand);
-            plugin.getCommand("reports").setTabCompleter(reportsCommand);
-        }
+        ReportsCommand reportsCommand = new ReportsCommand(plugin, manager);
+        CommandBindings.bind(plugin, "reports", reportsCommand, reportsCommand);
 
         plugin.getServer().getPluginManager().registerEvents(new ReportListener(manager), plugin);
 
